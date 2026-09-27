@@ -1,2 +1,4 @@
 // 程序图标（tools/icon/make_icon.py 生成）；托盘图标按 ID 1 载入
 1 ICON "sbparry.ico"
+// 内置的结算校准（data/calib_default.tsv），exe 单独发布也能用
+2 RCDATA "..\\data\\calib_default.tsv"

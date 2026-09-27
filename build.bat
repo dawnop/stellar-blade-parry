@@ -18,5 +18,4 @@ ml64 /nologo /c /Fo build\hooks.obj src\hooks.asm || exit /b 1
 rc /nologo /fo build\sbparry.res res\sbparry.rc || exit /b 1
 cl /nologo /O2 /std:c++17 /utf-8 /EHsc /W3 /MT /DUNICODE /D_UNICODE /Fo:build\ /Fe:build\sbparry.exe src\*.cpp build\hooks.obj build\sbparry.res ^
    /link /INCREMENTAL:NO user32.lib gdi32.lib gdiplus.lib dwmapi.lib shell32.lib advapi32.lib /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup || exit /b 1
-copy /y data\calib_default.tsv build\ >nul
 echo OK: build\sbparry.exe

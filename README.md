@@ -95,17 +95,19 @@ Took damage -x% (<招式名>, <N>ms after it started)
 
 ### 运行 sbparry.exe
 
-解压发布包，双击 `sbparry.exe`。游戏开没开都行，它会等游戏启动后自动挂上。
+从 Release 页面下载 `sbparry.exe`，放进任意文件夹双击运行即可（设置、日志、本机校准会写在它旁边）。游戏开没开都行，它会等游戏启动后自动挂上。
 
 技能步骤表、键位这些数据，SBParry 在自己的进程里直接从游戏内存读（只读）。挂上后几秒内日志里会出现 `Step table loaded: N rows (read directly from the game)`。
 
-发布包内容：
+Release 页面还有一个 zip，内容是：
 
 ```
-sbparry.exe
-calib_default.tsv      默认校准数据（渡鸦 Raven Boss）
+sbparry.exe            和单独下载的是同一个文件
 SBParryBridge\         备用方案用的 UE4SS mod，平时用不到
+README.md / README.en.md / LICENSE.txt
 ```
+
+默认的时机校准数据（渡鸦、红莲等）已经编进 exe 里。
 
 **游戏请用“无边框”或“窗口”模式**，独占全屏下叠加层显示不出来。
 
@@ -236,7 +238,7 @@ StellarBlade\SB\Binaries\Win64\
 
 **校准是什么？时机不准怎么办？**
 - 每一招从“开始出招判定”到“游戏真正结算”的时间不一样。SBParry 会在你挨过/挡过几次之后自动学到每一招的结算时间，存在 `calib.tsv`，下次启动继续用。
-- 发布包自带渡鸦 (Raven) Boss 的默认校准 `calib_default.tsv`。其他敌人第一次见的时候可能稍有偏差，多打几下就准了。
+- exe 内置渡鸦 (Raven)、红莲 (Scarlet) 等 Boss 的默认校准（源码里的 `data/calib_default.tsv`）。其他敌人第一次见的时候可能稍有偏差，多打几下就准了。
 
 **被冲击波环打到了**
 - 那是贴地扩散的环（判定条上的薄荷绿“跳跃”音符），闪避躲不掉，要跳。自动模式会自己跳。
@@ -262,7 +264,7 @@ build.bat
 
 会编译 `src\*.cpp`、`src\hooks.asm`（ml64）和 `res\sbparry.rc`（rc）。如果 PATH 里没有 `cl`、`ml64` 或 `rc`，脚本会自动载入 VS 开发环境；万一还是找不到，就在 “x64 Native Tools Command Prompt for VS 2022” 里运行。
 
-`package.bat 1.0.0` 会先编译，再把 `sbparry.exe`、`calib_default.tsv`、`SBParryBridge` 和说明文件打成 `dist\SBParry-1.0.0.zip`。
+`package.bat 1.0.0` 会先编译，再输出 `dist\sbparry.exe`（单文件即可用），以及把 `sbparry.exe`、`SBParryBridge` 和说明文件打成 `dist\SBParry-1.0.0.zip`。默认校准 `data\calib_default.tsv` 通过 `res\sbparry.rc` 编进 exe；开发时 exe 旁边放一个同名文件会优先用文件。
 
 程序图标是 `res\sbparry.ico`（原创设计：刀刃 + 四角星 + 弹反弧线），exe 和托盘都用它。图标由 `tools\icon\make_icon.py` 生成（需要 Pillow）。
 

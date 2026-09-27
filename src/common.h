@@ -27,7 +27,7 @@ inline uint64_t SecToTsc(double s) { return (uint64_t)(s * g_tscPerSec); }
 inline int Frames(double sec) { return (int)std::lround(sec * kFps); }
 inline int Ms(double sec) { return (int)std::lround(sec * 1000); }
 
-#define SBP_VERSION L"0.2.0"
+#define SBP_VERSION L"0.2.1"
 
 // 中英双语：TR("中文", "English")。语言在 config 里选，默认跟随游戏 / 系统
 enum class Lang { Zh, En };

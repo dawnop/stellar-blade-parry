@@ -107,7 +107,7 @@ static EveMove ClassifyEve(const std::string& n) {
 
 // ---------------------------------------------------------------- 结算校准
 // 每个 Hit 步骤实测的“步骤开始 -> 结算”秒数（最近若干次）。同一招很稳定（各招 35~145ms 不等），按招校准。
-// calib_default.tsv 随程序发布（Raven 全招式），calib.tsv 是本机学到的，优先
+// 内置校准 calib_default.tsv 编进 exe 资源（exe 旁边有同名文件时用文件，开发时方便改），calib.tsv 是本机学到的，优先
 
 static const double kHitLag = 0.08; // 没校准过的招：按首个判定框延迟 + 80ms 估计
 static std::map<int, std::deque<float>> g_calib;
@@ -160,12 +160,10 @@ static void SaveCalib() {
     fclose(f);
 }
 
-static int LoadCalibFile(const wchar_t* path, const std::map<std::string, int>& byName) {
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, path, L"rb") || !f) return 0;
+static int LoadCalibText(const std::string& text, const std::map<std::string, int>& byName) {
     char line[1024];
     int n = 0;
-    while (fgets(line, sizeof(line), f)) {
+    for (size_t pos = 0; NextLine(text, pos, line, sizeof(line));) {
         char* ctx = nullptr;
         char* tok = strtok_s(line, "\t\r\n", &ctx);
         auto it = tok ? byName.find(tok) : byName.end();
@@ -175,16 +173,35 @@ static int LoadCalibFile(const wchar_t* path, const std::map<std::string, int>& 
         while ((tok = strtok_s(nullptr, "\t\r\n", &ctx))) q.push_back((float)atof(tok));
         n++;
     }
-    fclose(f);
     return n;
+}
+
+static bool ReadWholeFile(const wchar_t* path, std::string& out) {
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"rb") || !f) return false;
+    char buf[4096];
+    out.clear();
+    for (size_t n; (n = fread(buf, 1, sizeof(buf), f)) > 0;) out.append(buf, n);
+    fclose(f);
+    return true;
+}
+
+static std::string DefaultCalibText() {
+    std::string s;
+    if (ReadWholeFile(L"calib_default.tsv", s)) return s;
+    HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(2), MAKEINTRESOURCEW(10)); // RT_RCDATA
+    HGLOBAL h = r ? LoadResource(nullptr, r) : nullptr;
+    const char* p = h ? (const char*)LockResource(h) : nullptr;
+    return p ? std::string(p, SizeofResource(nullptr, r)) : std::string();
 }
 
 static void LoadCalib() {
     g_calib.clear();
     std::map<std::string, int> byName;
     for (int i = 0; i < (int)g_steps.size(); i++) byName[g_steps[i].name] = i;
-    int d = LoadCalibFile(L"calib_default.tsv", byName);
-    int u = LoadCalibFile(L"calib.tsv", byName);
+    std::string text;
+    int d = LoadCalibText(DefaultCalibText(), byName);
+    int u = ReadWholeFile(L"calib.tsv", text) ? LoadCalibText(text, byName) : 0;
     Log(TR("[SBParry] 结算校准：内置 %d 招，本机 %d 招\n", "[SBParry] Settle calibration: %d built-in, %d learned\n"), d, u);
 }
 

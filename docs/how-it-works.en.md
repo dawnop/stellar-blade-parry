@@ -164,7 +164,7 @@ The game doesn't settle at the start of the Hit step: the collision has a `Delay
   | projectile | +0.03 s + flight time |
   | shockwave ring | −0.03 s + expansion time |
 
-- Samples are saved to `calib.tsv` next to the exe (one line per step: name + samples). The release ships `calib_default.tsv` with default calibration for the Raven boss; the locally learned `calib.tsv` takes precedence.
+- Samples are saved to `calib.tsv` next to the exe (one line per step: name + samples). Default calibration `data/calib_default.tsv` (Raven, Scarlet and others) is compiled into the exe as a resource (a file of the same name next to the exe overrides it); the locally learned `calib.tsv` takes precedence.
 
 ## Projectiles
 

@@ -14,16 +14,17 @@
 
 目前在渡鸦 (Raven) 和红莲 (Scarlet，两个阶段) Boss 身上做了完整实测（包括自动弹反）。其他敌人用的是同一套基于游戏数据的逻辑，但还没有逐个验证过。
 
-> 演示视频：TODO（B 站链接，发布后补上）
+> 演示视频：[B 站](https://www.bilibili.com/video/BV1FQae6EEbG/) · [YouTube](https://www.youtube.com/watch?v=aZE8Sop3Tds)
+
+![演示：渡鸦追击四连](docs/images/demo.gif)
 
 ## 截图
 
-<!-- TODO: 补截图/GIF，放在 docs/images/ 下 -->
-<!-- ![判定条](docs/images/bar.png) -->
-<!-- ![统计面板](docs/images/panel.png) -->
-<!-- ![演示](docs/images/demo.gif) -->
+| 攻击来临前约 1 秒就出现在判定条上 | 按下后显示游戏自己的判定 | 只能闪避的招式（抓取等）是琥珀色 |
+|---|---|---|
+| ![判定条](docs/images/incoming.jpg) | ![完美弹反](docs/images/perfect.jpg) | ![完美闪避](docs/images/dodge.jpg) |
 
-*（截图待补）*
+录制时开着自动弹反（判定条右上角的 AUTO），界面语言为中文。
 
 ## 判定条怎么看
 

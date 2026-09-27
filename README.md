@@ -14,16 +14,17 @@ A rhythm-game style timing trainer for Stellar Blade (PC). A judgement bar shows
 
 Fully tested, including auto parry, against the Raven and Scarlet (both phases) bosses. Other enemies go through the same data-driven logic, but not all of them have been verified in game.
 
-> Demo video: TODO (Bilibili link after release)
+> Demo video: [YouTube](https://www.youtube.com/watch?v=aZE8Sop3Tds) · [Bilibili](https://www.bilibili.com/video/BV1FQae6EEbG/)
+
+![Demo: Raven's four-hit chase combo](docs/images/demo.gif)
 
 ## Screenshots
 
-<!-- TODO: add screenshots / GIF under docs/images/ -->
-<!-- ![Judgement bar](docs/images/bar.png) -->
-<!-- ![Stats panel](docs/images/panel.png) -->
-<!-- ![Demo](docs/images/demo.gif) -->
+| Hits show up on the bar about 1 second ahead | After you press, the game's own verdict | Dodge-only moves (grabs etc.) are amber |
+|---|---|---|
+| ![Judgement bar](docs/images/incoming.jpg) | ![Perfect parry](docs/images/perfect.jpg) | ![Perfect dodge](docs/images/dodge.jpg) |
 
-*(screenshots coming)*
+Recorded with auto parry on (the AUTO tag above the bar) and the Chinese UI; press Ctrl+Alt+J to switch to English.
 
 ## Reading the bar
 

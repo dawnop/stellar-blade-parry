@@ -53,7 +53,7 @@ struct WaveInfo { bool zone; double speed, ahead; bool ja; };
 static const std::regex kReObj(R"(\{[^{}]*\})"), kReAlias(R"re("Alias"\s*:\s*"([A-Za-z0-9_]+)")re"),
     kReTime(R"re("Time"\s*:\s*([0-9.]+))re"), kReDelay(R"re("startDelayTime"\s*:\s*([0-9.]+))re"),
     kReRange(R"(_(\d+)_\d+_\d+$)"), kReReach(R"(^ActionAssist_3D[A-Za-z]+_(\d+))"),
-    kReDelayTime(R"re("DelayTime"\s*:\s*(-?[0-9.]+))re");
+    kReDelayTime(R"re("DelayTime"\s*:\s*(-?[0-9.]+))re"), kReGroup(R"re("CollisionGroupName"\s*:\s*"([A-Za-z0-9_]+)")re");
 
 // Lua tonumber：整段是数字才算
 static bool ToNum(const std::string& s, double& v) {
@@ -190,7 +190,11 @@ static bool ExportSteps(std::string& out) {
         r.type = row.Int(sType);
         r.dur = row.Float(sDur);
         r.next = row.FName(sNext);
-        r.real = !cga.empty() || paNum > 0 || row.FName(sOverride) != "None" || isWave;
+        // 起手冲刺（只有 Collision_Dash 的 Cast 步骤，如红莲 SwingCombo_Cast1）：冲到身前就停，打不到人，配套的范围判定也不算（同 Bridge）
+        bool dashOnly = name.find("_Cast") != std::string::npos && !cga.empty();
+        for (std::sregex_iterator it(cga.begin(), cga.end(), kReGroup), end; it != end && dashOnly; ++it)
+            dashOnly = (*it)[1].str() == "Collision_Dash";
+        r.real = !dashOnly && (!cga.empty() || paNum > 0 || row.FName(sOverride) != "None" || isWave);
         std::string assist = row.FName(sAssist);
         r.reach = std::regex_search(assist, m, kReReach) ? strtod(m[1].str().c_str(), nullptr) / 100 : 0;
         r.mash = row.FName(sBreak) != "None";

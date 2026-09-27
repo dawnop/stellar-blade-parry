@@ -121,6 +121,15 @@ local function dumpSteps()
         local delay = -1
         local first = cga:match("{[^{}]*}")
         if first then delay = tonumber(first:match('"DelayTime"%s*:%s*(-?[%d%.]+)') or "") or 0 end
+        -- 起手冲刺（只有 Collision_Dash 的 Cast 步骤，如红莲 SwingCombo_Cast1）：冲到身前就停，接着才是真正的攻击，
+        -- 冲刺本身打不到人（配套的范围判定 OverrideTargetFilterAlias 也不算）。九头蛇等的冲撞攻击是 Hit 步骤，不受影响
+        local dashOnly = false
+        if tostring(name):find("_Cast") and cga ~= "" then
+            dashOnly = true
+            for g in cga:gmatch('"CollisionGroupName"%s*:%s*"([%w_]+)"') do
+                if g ~= "Collision_Dash" then dashOnly = false end
+            end
+        end
         local ck, cs, cl, cr = findChance(row.StartSelfEffect:ToString(), info)
         local jp, ja, speed = row.AvailableJustParry, row.AvailableJustAction, 0
         local pa = row.UsableNonTargetProjectileAliasArray
@@ -145,7 +154,7 @@ local function dumpSteps()
             name = tostring(name), type = row.Type, dur = row.Duration, next = row.NextStepAlias:ToString(),
             jp = jp, ja = ja, delay = delay, speed = speed,
             -- 范围判定（OverrideTargetFilterAlias，如 BurstAreaSlash_Hit1 = 12m 圆柱）和自身位置生成的伤害效果也是真打
-            real = cga ~= "" or #pa > 0 or row.OverrideTargetFilterAlias:ToString() ~= "None" or isWave,
+            real = not dashOnly and (cga ~= "" or #pa > 0 or row.OverrideTargetFilterAlias:ToString() ~= "None" or isWave),
             ahead = ahead,
             reach = tonumber(row.ActionAssistTargetFilter:ToString():match("^ActionAssist_3D%a+_(%d+)") or "0") / 100,
             ck = ck, cs = cs, cl = cl, cr = cr, mash = row.NextStepAliasWhenLinkBreak:ToString() ~= "None",

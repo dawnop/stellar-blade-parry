@@ -2,14 +2,14 @@
 
 [English](how-it-works.en.md) | **中文**
 
-本文面向想读代码、移植到新版本游戏或做类似工具的人。偏移和特征码对应 2026-08 的 Steam 版（UE4.26）；源码里的定义（`src/game.h`、`src/hooks.asm`）以代码为准。文中的实测数据除特别说明外都来自渡鸦 (Raven) Boss。
+本文面向想读代码、移植到新版本游戏或做类似工具的人。偏移和特征码对应 2026-08 的 Steam 版（UE4.26）；源码里的定义（`src/game.h`、`src/hooks.asm`、`src/ue.cpp`）以代码为准。文中的实测数据除特别说明外都来自渡鸦 (Raven) Boss。
 
 ## 总体结构
 
 ```
  ┌──────────────────────── SB-Win64-Shipping.exe（游戏进程）───────────────────────┐
  │                                                                                 │
- │  UE4SS + SBParryBridge (Lua)                  3 个代码钩子（code cave）          │
+ │  UE 反射数据（对象、名字）                    3 个代码钩子（code cave）          │
  │   ├─ SkillActiveStepTable ─┐                   ├─ IsJustActionActive 入口       │
  │   ├─ Effect / Projectile  ─┤                   ├─ 按下：写 inst+BC 处           │
  │   │  / TargetFilter 表     │                   └─ 步骤切换：mov [r13+B4],ecx    │
@@ -23,13 +23,14 @@
  │                             │                          ▼                         │
  │                             │                   PadCtrl 控制块（在 cave 里）      │
  └─────────────────────────────┼──────────────────────────┬────────────────────────┘
-                               │ 文件                     │ ReadProcessMemory /
-                               ▼                          │ WriteProcessMemory
-       ue4ss/Mods/SBParryBridge/                          │
-         steps.tsv  live.txt  projectiles.txt  keys.txt   │
+                               │ ReadProcessMemory        │ ReadProcessMemory /
+                               │ （只读，独立线程）       │ WriteProcessMemory
+                               │ 退回时：读 Bridge 的文件 │
+                               │ ue4ss/Mods/SBParryBridge/│
                                │                          │
                                ▼                          ▼
  ┌──────────────────────────────── sbparry.exe（独立进程）────────────────────────┐
+ │  native：后台线程读 UE 对象 / 名字 → steps / live / projectiles / keys 文本     │
  │  tracker：读事件、结算判定、按步骤表推算音符、校准（calib.tsv）、               │
  │           未应对 / 掉血记录、一击必杀                                           │
  │  projectiles：每帧读飞行道具位置，算到达时刻                                    │
@@ -40,15 +41,16 @@
  └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- sbparry.exe 是外部进程，不往游戏里注入 DLL（UE4SS 本身除外）。
+- sbparry.exe 是外部进程，不往游戏里注入任何 DLL，也不依赖 UE4SS。
 - 游戏里只有三段很短的钩子代码，往环形缓冲区追加事件；以及两个手柄导入表槽位的重定向。其余全部靠读内存；唯一写游戏数据的地方是一击必杀（改堆上的步骤表，见下文）。
-- UE4SS 只用来跑 Bridge：技能步骤表、效果表、道具表、键位、各种对象地址和字段偏移这些只能方便地通过 UE 反射拿到的数据由它导出成文本文件。
+- 技能步骤表、效果表、道具表、键位、各种对象地址和字段偏移这些只能方便地通过 UE 反射拿到的数据，由 sbparry.exe 从外部直接读游戏的反射信息得到，整理成文本（见“直接读取 UE 反射数据”）。UE4SS 上跑的 SBParryBridge 只是兜底：读不到时改读它导出的同格式文件。
 - sbparry.exe 是窗口子系统程序，没有控制台。日志写在程序目录下的 `sbparry.log`，不论界面语言一律英文（`Log(...)` 的参数在 `EnglishScope` 里求值，其中的 `TR` 都取英文）；托盘菜单的“打开日志文件”用系统默认的文本编辑器打开它（打不开就用记事本）。`sbparry.exe --quit` 通知正在运行的实例还原游戏代码后退出。
 - 游戏窗口不在前台时判定条和统计面板隐藏，不盖在别的程序上。Ctrl+Alt 快捷键有注册失败的（被别的程序占了），启动时弹提示列出。
 
 | 源文件 | 职责 |
 |---|---|
-| `game.cpp` + `hooks.asm` | 附加游戏进程、安装 / 还原钩子和手柄桩 |
+| `game.cpp` + `hooks.asm` | 附加游戏进程、安装 / 还原钩子和手柄桩，找 UE 全局对象 |
+| `ue.cpp` + `native.cpp` | 从外部读 UE 反射数据，导出步骤表等文本；`BridgeText()` 退回读 Bridge 的文件 |
 | `tracker.cpp` | 步骤表 → 音符预测；事件 → 完美判定、蓝紫光判定；未应对、掉血记录；一击必杀；`timing.csv` |
 | `projectiles.cpp` | 飞行道具实时追踪 |
 | `live.cpp` | 顺着 PlayerController 读伊芙 / 敌人 / 相机；血条、可惩戒状态、过场 QTE 控件、时间流速 |
@@ -122,10 +124,10 @@
 
 ## 音符预测
 
-1. Bridge 用 `ForEachRow` 按 RowMap 顺序导出 SkillActiveStepTable 到 `steps.tsv`（列见文末“Bridge 导出的文件”）。第一行 `#table=0x…` 是表对象地址，sbparry.exe 用它在内存里把序号对上真实的行地址（UE4SS Lua 返回的行是拷贝，不能直接用地址），并抽查几行的时长确认顺序一致。
+1. SkillActiveStepTable 按 RowMap 顺序导出成 `steps.tsv`（原生导出直接读 RowMap，Bridge 用 `ForEachRow`；列见文末“导出的文件”）。第一行 `#table=0x…` 是表对象地址，sbparry.exe 用它在内存里把序号对上真实的行地址（UE4SS Lua 返回的行是拷贝，不能直接用地址），并抽查几行的时长确认顺序一致。
 2. 步骤切换钩子让 sbparry.exe 知道有哪些敌方技能实例在跑。每帧读它们的 `+60`（当前步骤）、`+B0`、`+B4`；`+B0` 超过 300 ms 没变就当技能已结束、实例闲置。当前步骤的开始时刻优先用步骤事件的 TSC（精确），对不上时才用 `现在 − B0` 倒推。
 3. 从当前步骤沿 `NextStepAlias` 往后走（最多 10 步、1.5 s）：当前步剩余 = `B4 − B0`，后面的步骤累加时长；每遇到一个 Hit 步骤，结算时刻 = 该步开始时刻 + 这一招的结算偏移（见下一节）。
-4. 只有“真打”的 Hit 步骤出音符。Bridge 导出的 `real` 列为 1 的条件是下面三者之一：
+4. 只有“真打”的 Hit 步骤出音符。`steps.tsv` 的 `real` 列为 1 的条件是下面三者之一：
    - 有攻击碰撞组（`AttackCollisionGroupArray`）；
    - 发射飞行道具（`UsableNonTargetProjectileAliasArray` / `UsableTargetProjectileAliasArray`）或生成冲击波环；
    - 有范围判定 `OverrideTargetFilterAlias`（例如 `BurstAreaSlash_Hit1` 是 12 m 的圆柱）；
@@ -168,7 +170,7 @@ Hit 步骤开始后，游戏并不是马上结算：判定框有 `DelayTime`，�
 
 剑气之类的远程攻击，伤害来自道具本身，发射它的 Hit 步骤很短（渡鸦后跳剑气的 Hit 步骤只有 0.1 s），离得远时步骤早已切走、剑气还在飞。所以远程攻击分两段处理：道具出现前按步骤估计，出现后按实时位置追踪。
 
-**道具从哪来。** 飞行道具是 `SBProjectile` actor，按类型建对象池、常驻关卡。Bridge 在每个关卡（PlayerController 变化时）`FindAllOf("SBProjectile")` 全量列一次，之后新建的池对象由 `NotifyOnNewObject` 回调记下（回调只排队），Bridge 每 200 ms 的循环把它们追加到 `projectiles.txt`。每行带上 ProjectileTable 对应行（类名去掉 `_C`）的 `AvailableJustParry` / `AvailableJustAction` 和速度；伊芙自己的道具（`P_` 开头）跳过。速度会被游戏夹在 `[MinSpeed, MaxSpeed]` 里，Bridge 导出前先夹好：渡鸦剑气 `Speed` = 2000，但 `MinSpeed` = `MaxSpeed` = 2700，实际 27 m/s。
+**道具从哪来。** 飞行道具是 `SBProjectile` actor，按类型建对象池、常驻关卡。原生导出每 200 ms 在对象数组里重扫一遍，新出现的追加到 `projectiles.txt`；Bridge 则在每个关卡（PlayerController 变化时）`FindAllOf("SBProjectile")` 全量列一次，之后新建的池对象由 `NotifyOnNewObject` 回调记下（回调只排队），Bridge 每 200 ms 的循环把它们追加到 `projectiles.txt`。每行带上 ProjectileTable 对应行（类名去掉 `_C`）的 `AvailableJustParry` / `AvailableJustAction` 和速度；伊芙自己的道具（`P_` 开头）跳过。速度会被游戏夹在 `[MinSpeed, MaxSpeed]` 里，导出前先夹好：渡鸦剑气 `Speed` = 2000，但 `MinSpeed` = `MaxSpeed` = 2700，实际 27 m/s。
 
 **实时追踪**（`projectiles.cpp`）：
 
@@ -211,7 +213,7 @@ SBParry 把它当成一个从初始半径出发、匀速扩散的飞行道具：
   | `_900` | 9 m |
   | `_1500` | 15 m |
 
-  Bridge 从效果行的 `ActiveTargetFilterAlias`（形如 `Enemy_3DArc_450_120_200`，450 cm）解析距离。
+  导出时从效果行的 `ActiveTargetFilterAlias`（形如 `Enemy_3DArc_450_120_200`，450 cm）解析距离。
 - Eve 这边对应 `FlashBehindAttack`（蓝）和 `MoveBackAttack`（紫）两个指令：闪避键（command 24）+ 移动输入按住至少 0.1 s，方向在 315°–45°（朝敌人）为蓝，135°–225°（背离敌人）为紫。
 - 判定条上显示为一段长条。按下时判断：成功 / 早了 / 晚了 / 方向或距离不对。
   检测方法：步骤切换钩子能看到伊芙每次进入新步骤。窗口按敌人步骤切换事件的时间 + `startDelayTime` 记下；伊芙进入 `FlashBehindAttack*_Cast1` / `MoveBackAttack*_Cast1` 即成功；进入普通闪避（含完美闪避）的第一步时，按它相对窗口的位置给出早/晚几帧，落在窗口内却没触发就是方向或距离不对。伊芙的步骤比按键晚 1~2 帧开始，所以贴着窗口边缘的结果可能差一帧。
@@ -230,7 +232,7 @@ SBParry 把它当成一个从初始半径出发、匀速扩散的飞行道具：
 
 ### 受到伤害（血条）
 
-伊芙的血量在原生代码里，不好直接找；Bridge 改为导出 HUD 上的血条控件（`WB_MainHUD_PlayerInfo.WidgetTree.ProgressBar_HP`，一个 `ProgressBar`）的地址和 `Percent` 字段偏移，sbparry.exe 每帧读这个 0~1 的值。
+伊芙的血量在原生代码里，不好直接找；改为导出 HUD 上的血条控件（`WB_MainHUD_PlayerInfo.WidgetTree.ProgressBar_HP`，一个 `ProgressBar`）的地址和 `Percent` 字段偏移，sbparry.exe 每帧读这个 0~1 的值。
 
 血条掉血有动画，会分好几帧降下去。连续的下降合并成一次事件：第一帧下降的时刻约等于挨打时刻，此时把它归到最近开始的敌方 Hit 步骤上（3 s 以内，远程攻击可能在步骤结束后才打到），停止下降 0.3 s 后记一条总量，形如 “Took damage -12.3% (某步骤, 630ms after it started)”。上面冲击波环的实测数据就是这样得到的。
 
@@ -240,7 +242,7 @@ SBParry 把它当成一个从初始半径出发、匀速扩散的飞行道具：
 
 `ActorState` 在原生代码里，反射拿不到。通过内存对比找到两个同步变化的标志：
 
-- 部分 Boss 蓝图有 `IsGroggy` 布尔（渡鸦等），偏移每个类不同。Bridge 遍历 `SBCharacter` 实例，按类导出 `类地址:偏移`；
+- 部分 Boss 蓝图有 `IsGroggy` 布尔（渡鸦等），偏移每个类不同。导出时遍历 `SBCharacter` 实例，按类导出 `类地址:偏移`；
 - `SBCharacter.bActiveWeakPointCollision` 在同一时刻翻转，是没有 `IsGroggy` 的敌人的通用后备。
 
 sbparry.exe 读目标敌人的类指针（`+0x10`），查到 `IsGroggy` 偏移就用它，否则用 `bActiveWeakPointCollision`，取最低位。实测两者在倒地可惩戒时同时 0→1，开始惩戒时变回 0，所以不会重复触发。
@@ -253,8 +255,8 @@ sbparry.exe 读目标敌人的类指针（`+0x10`），查到 `IsGroggy` 偏移�
 
 ## 连打与过场 QTE
 
-- **挣脱连打**：带 `NextStepAliasWhenLinkBreak` 的敌方步骤是拼刀 / 被抓（渡鸦、锯鲨、巨兽、Scarlet 等都有），Bridge 导出为 `mash` 列。敌人处在这种步骤时，自动模式以约 14 Hz 连打轻攻击（每 70 ms 按一次、按住 35 ms，时长按伊芙的时间流速拉长）。
-- **过场 QTE**：过场动画里的 QTE 是控件 `SBSequencerQTEWidget`（第一次播过场时才创建）。Bridge 导出它的地址和 `Visibility`、`InputType`、`InputAction`、`UIInputAction`、`bBindInput` 的偏移。控件可见（`ESlateVisibility` 为 0/3/4）且绑定了输入时，读出 `InputAction`（为 0 则用 `UIInputAction`）的 FName 比较序号，和 `keys.txt` 里 `@names` 导出的动作名序号对照，按对应的动作；对不上时按轻攻击。
+- **挣脱连打**：带 `NextStepAliasWhenLinkBreak` 的敌方步骤是拼刀 / 被抓（渡鸦、锯鲨、巨兽、Scarlet 等都有），导出为 `mash` 列。敌人处在这种步骤时，自动模式以约 14 Hz 连打轻攻击（每 70 ms 按一次、按住 35 ms，时长按伊芙的时间流速拉长）。
+- **过场 QTE**：过场动画里的 QTE 是控件 `SBSequencerQTEWidget`（第一次播过场时才创建）。导出它的地址和 `Visibility`、`InputType`、`InputAction`、`UIInputAction`、`bBindInput` 的偏移。控件可见（`ESlateVisibility` 为 0/3/4）且绑定了输入时，读出 `InputAction`（为 0 则用 `UIInputAction`）的 FName 比较序号，和 `keys.txt` 里 `@names` 导出的动作名序号对照，按对应的动作；对不上时按轻攻击。
 
 ## 自动操作
 
@@ -278,7 +280,7 @@ sbparry.exe 读目标敌人的类指针（`+0x10`），查到 `IsGroggy` 偏移�
 - **暂停**：游戏不在前台，或玩家按着 Ctrl / Alt（比如刚按完快捷键，免得拼成组合键）时不发键，并松开所有模拟按键。
 - **按住时长**：游戏按游戏时间判断按键（闪避要按住 0.02 s、蓝紫方向要保持 0.1 s）。伊芙被放慢时（Boss 爆发招的慢动作等）真实按住时间按伊芙的时间流速（`WorldSettings.TimeDilation` × 伊芙的 `CustomTimeDilation`，`+0xB0`）拉长。
 
-按键来自 Bridge 导出的 `keys.txt`（从 `Default__InputSettings` 读 Guard / Evade / AttackLight / AttackStrong / Jump / Interaction_Key 动作映射和 MoveForward / MoveRight 轴映射；带修饰键的组合跳过）。
+按键来自 `keys.txt`（从 `Default__InputSettings` 读 Guard / Evade / AttackLight / AttackStrong / Jump / Interaction_Key 动作映射和 MoveForward / MoveRight 轴映射；带修饰键的组合跳过）。
 
 输入设备跟随玩家最近一次**真实**操作的那种，或用 `autoDevice` 固定：
 
@@ -341,9 +343,46 @@ cave 布局（16 KB）：
 
 所有块的源码在 `src/hooks.asm`（ml64 汇编），运行时整块拷进 cave，再替换占位常量（日志 / PadCtrl 地址），每块最后 8 字节填回跳地址或原函数地址。
 
-## Bridge 导出的文件
+## 直接读取 UE 反射数据
 
-全部写在 `ue4ss/Mods/SBParryBridge/`。
+步骤表、效果表、道具表、键位、对象地址和字段偏移原先全靠 UE4SS 上的 Bridge 导出，现在 sbparry.exe 自己读（`src/ue.cpp`、`src/native.cpp`）：一个后台线程用自己的只读进程句柄（`PROCESS_VM_READ`），从外部 `ReadProcessMemory` 游戏的 UE 反射信息，产出和 Bridge 格式完全相同的 `steps.tsv` / `live.txt` / `projectiles.txt` / `keys.txt` 文本（和 Bridge 的输出逐字节对比过，一致）。整个工具实测 CPU 约每秒 3 ms，工作集约 31 MB。
+
+**找全局对象。** 三个钩子都装好后，用挂钩时同一遍代码扫描的结果找两个全局对象：
+
+```
+GUObjectArray  89 05 ?? ?? ?? ?? 85 DB 7F 36 4C 8D 05                      第一条 mov 的 rip 相对目标
+FNamePool      48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? C6 05 ?? ?? ?? ?? 01    lea rcx 的目标；第 0 块须以 "None" 条目开头
+```
+
+对象数组还要求元素个数合理、第一块指针非空。两个都找到才启动导出线程，否则日志写 `UE globals not found` 并直接用 Bridge。
+
+**对象数组。** `GUObjectArray+0x10` 是分块数组（每块 64K 个 0x18 字节的 `FUObjectItem`：对象指针、标记）。每轮重读全部槽位，但只有对象指针变了的槽才重读对象头（类、名字、Outer、标记），所以是增量的。列实例时跳过 CDO / 原型以及 PendingKill / Unreachable 的对象；按路径找对象时比对名字和 Outer（包）的名字。
+
+**名字池。** 块 128 KB，FName 序号高 16 位是块号、低 16 位 ×2 是块内偏移；条目头 2 字节，bit0 = 宽字符，长度 = 头 >> 6。按序号取字符串直接读（有缓存）；按字符串找序号时，名字池有上百万个名字，只给事先登记的一组（表路径、类名、键位动作名等）建索引，扫一遍之后只接着扫新增的部分。
+
+**字段与数据表**（UE 4.26 标准布局，和 UE4SS 的 MemberVariableLayout 一致）：
+
+| 结构 | 字段 | 偏移 |
+|---|---|---|
+| UObject | Class / Name / Outer | 0x10 / 0x18 / 0x20 |
+| UStruct | SuperStruct / ChildProperties / PropertiesSize | 0x40 / 0x50 / 0x58 |
+| FField | Class / Next / Name | 0x08 / 0x20 / 0x28 |
+| FProperty | ElementSize / Offset_Internal | 0x3C / 0x4C |
+| FArrayProperty / FStructProperty | Inner / Struct | 0x78 |
+| FBoolProperty | ByteOffset / FieldMask | 0x79 / 0x7B |
+| UDataTable | RowStruct / RowMap | 0x28 / 0x30（RowMap 元素 0x18 字节：FName + 行指针，按数组顺序） |
+
+字段按名字沿 `ChildProperties` → `Next` 找，找不到再到 `SuperStruct` 里找。数据表按 RowMap 顺序读行，行内字段按上面的偏移取，JSON 字符串字段用和 Bridge 相同的正则解析。
+
+**节奏。** 线程每 200 ms 一轮：步骤表每 2 s 试一次，成功后不再导出；`live.txt` 每秒、`keys.txt` 每 3 s 重算；飞行道具每轮在对象数组里重扫 `SBProjectile` 实例（代替 Bridge 的 `NotifyOnNewObject`），新出现的追加，PlayerController 变了就换一代 `#gen`。内容没变不算更新。
+
+**读取方与兜底。** tracker / live / projectiles / autoplay 都通过 `BridgeText()` 取文本：有原生导出的内容就用它，没有就读 Bridge 的文件（照旧不读早于游戏进程启动的文件）。导出线程启动后的 10 s 内先等原生导出；过了 10 s 某个文件还没有内容，或者根本没找到全局对象，才去读 Bridge 的文件。载入步骤表时日志写明来源：`Step table loaded: N rows (read directly from the game)` 或 `(from SBParryBridge)`。挂上 15 s 后仍然没有步骤表时，提示读不到游戏数据，建议装 UE4SS + SBParryBridge 兜底（已经有 Bridge 文件夹时提示等待 Bridge）。`sbparry.ini` 的 `dataSource` 可以固定来源：`native` 不读 Bridge 的文件，`ue4ss` 不启动原生导出、只读 Bridge 的文件（默认 `auto` 即上面的行为；启动时读取）。
+
+`debugLog=1` 时，原生导出的四份文本另存到 sbparry.exe 所在目录：`native_steps.tsv`、`native_live.txt`、`native_projectiles.txt`、`native_keys.txt`，用来和 Bridge 的文件做对比。
+
+## 导出的文件
+
+原生导出只在内存里（节奏见上一节）；Bridge 写在 `ue4ss/Mods/SBParryBridge/`，下表的频率是 Bridge 的。两边内容逐字节相同。
 
 | 文件 | 频率 | 内容 |
 |---|---|---|
@@ -364,7 +403,7 @@ cave 布局（16 KB）：
 | 3 | 时长（s） |
 | 4 | `NextStepAlias` 对应的下一步序号，−1 = 无 |
 | 5 / 6 | 可完美弹反 / 可完美闪避（`AvailableJustParry` / `AvailableJustAction`；发射道具的步骤以道具表为准，冲击波环和伤害区域或上效果表的 `AvailableJustEvade`） |
-| 7 | 第一个攻击判定框的 `DelayTime`，−1 = 没有碰撞组 |
+| 7 | 第一个攻击判定框的 `DelayTime`：取 `AttackCollisionGroupArray` JSON 字符串里第一个对象的 `DelayTime`（没写为 0），字符串为空 = −1（没有碰撞组）。不用 `AttackCollisionGroupJsonArray`：游戏载入后过一阵才填它，导出得早会读到空的，约 90 个步骤被错写成 −1 |
 | 8 / 9 / 10 / 11 | 机会窗口：类型（0 / 1 蓝 / 2 紫）、开始、时长（s）、触发距离（m） |
 | 12 | 挣脱连打（有 `NextStepAliasWhenLinkBreak` = 1） |
 | 13 | 飞行道具 / 冲击波环速度（m/s），0 = 近战 |
@@ -384,7 +423,7 @@ hp=0x… pct=0x…                      伊芙血条 ProgressBar 与 Percent 偏
 qte=0x… vis=0x… type=0x… action=0x… uiaction=0x… bind=0x…   过场 QTE 控件与字段偏移
 ```
 
-`FindFirstOf` / `FindAllOf` 要遍历全部 UObject（约 30 ms），不能频繁搜：
+Bridge 的 `FindFirstOf` / `FindAllOf` 要遍历全部 UObject（约 30 ms），不能频繁搜：
 
 - PlayerController 失效时每 5 s 重搜一次；
 - 换了 PlayerController（开局 / 读档 / 换关卡）时全量扫一次血条、QTE 控件和敌人类；

@@ -1,6 +1,7 @@
 #include "projectiles.h"
 #include "game.h"
 #include "live.h"
+#include "native.h"
 
 // 对象池里的道具不飞时停在原点（或停在上次消失的位置），位置在变才算“在飞”
 static const double kActiveGap = 0.06;  // 超过这么久位置没变就当已停
@@ -22,46 +23,38 @@ struct Proj {
     std::deque<Sample> hist;
 };
 static std::map<uint64_t, Proj> g_projs;
-static uint64_t g_fileSize = ~0ull;
-static FILETIME g_fileTime;
-static std::string g_fileGen; // 首行 "#gen=..."：Bridge 每次全量重写（开局 / 换关卡）都换一个
+static uint64_t g_stamp;
+static std::string g_fileGen; // 首行 "#gen=..."：每次全量重写（开局 / 换关卡）都换一个
 static ULONGLONG g_lastCheck;
 
 void ResetProjectiles() {
     g_projs.clear();
-    g_fileSize = ~0ull;
-    g_fileTime = {};
+    g_stamp = 0;
     g_fileGen.clear();
 }
 
-// Bridge 写的 projectiles.txt：首行 "#gen=..."，之后每行“0x地址 行名 jp ja 初速 最高速”；开局全量，之后新建的池对象追加
+// projectiles.txt（原生导出或 Bridge）：首行 "#gen=..."，之后每行“0x地址 行名 jp ja 初速 最高速”；开局全量，之后新建的池对象追加
 static void Reload() {
     ULONGLONG now = GetTickCount64();
     if (now - g_lastCheck < 100) return;
     g_lastCheck = now;
-    std::wstring path = BridgeDir() + L"\\projectiles.txt";
-    WIN32_FILE_ATTRIBUTE_DATA fa;
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa)) return;
-    uint64_t size = ((uint64_t)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
-    if (size == g_fileSize && !CompareFileTime(&fa.ftLastWriteTime, &g_fileTime)) return;
-    // 上一局游戏留下的文件：地址对不上，不读
-    if (CompareFileTime(&fa.ftLastWriteTime, &GameStartTime()) < 0) return;
-    FILE* f = _wfsopen(path.c_str(), L"rb", _SH_DENYNO);
-    if (!f) return;
+    static std::string text;
+    TextState st = BridgeText(BridgeFile::Projectiles, text, g_stamp);
+    if (st == TextState::Stale) { g_projs.clear(), g_fileGen.clear(); return; } // 上一局留下的文件：地址对不上
+    if (st != TextState::Changed) return;
     char line[256], name[160];
-    if (!fgets(line, sizeof(line), f) || strncmp(line, "#gen=", 5)) { fclose(f); return; } // 正在重写
-    g_fileSize = size, g_fileTime = fa.ftLastWriteTime;
+    size_t pos = 0;
+    if (!NextLine(text, pos, line, sizeof(line)) || strncmp(line, "#gen=", 5)) { g_stamp = 0; return; } // 正在重写
     // 换了一代 = 换关卡重写了：旧地址全部作废
     if (g_fileGen != line) g_projs.clear(), g_fileGen = line;
     uint64_t addr;
     int jp, ja;
-    while (fgets(line, sizeof(line), f)) {
+    while (NextLine(text, pos, line, sizeof(line))) {
         float v0 = 0, v1 = 0;
         if (sscanf_s(line, "0x%llx %159s %d %d %f %f", &addr, name, (unsigned)sizeof(name), &jp, &ja, &v0, &v1) < 4) continue;
         Proj& p = g_projs[addr];
         p.jp = jp != 0, p.ja = ja != 0, p.vInit = v0, p.vMax = v1;
     }
-    fclose(f);
 }
 
 // 相对位置 p、速度 v：最早 |p + v t| = R 的 t；到不了返回 -1

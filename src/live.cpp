@@ -1,5 +1,6 @@
 #include "live.h"
 #include "game.h"
+#include "native.h"
 
 Live g_live;
 HWND g_gameWnd;
@@ -28,18 +29,17 @@ static void ResetLiveFile() {
     g_worldSettings = 0, g_worldDilOff = 0;
 }
 
-// SBParryBridge 导出的 live.txt（格式见 bridge 的 exportLive）。打不开（Bridge 正在重写）就沿用上次的值；
-// 比游戏进程还旧的是上一局留下的，地址全都不对，不用
+// live.txt（原生导出或 SBParryBridge，格式见 bridge 的 exportLive）。没变 / 暂时读不到就沿用上次的值；
+// Bridge 文件比游戏进程还旧的是上一局留下的，地址全都不对，不用
+static uint64_t g_liveStamp; // 断开时清零：重连后同一份内容也要重新读
 static void ReadLiveFile() {
-    std::wstring path = BridgeDir() + L"\\live.txt";
-    WIN32_FILE_ATTRIBUTE_DATA fa;
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa)) return;
-    if (CompareFileTime(&fa.ftLastWriteTime, &GameStartTime()) < 0) { ResetLiveFile(); return; }
-    FILE* f = _wfsopen(path.c_str(), L"rb", _SH_DENYNO);
-    if (!f) return;
+    static std::string text;
+    TextState st = BridgeText(BridgeFile::Live, text, g_liveStamp);
+    if (st == TextState::Stale) { ResetLiveFile(); return; }
+    if (st != TextState::Changed) return;
     ResetLiveFile();
     char line[2048];
-    while (fgets(line, sizeof(line), f)) {
+    for (size_t pos = 0; NextLine(text, pos, line, sizeof(line));) {
         sscanf_s(line, "pc=0x%llx", &g_live.pc);
         sscanf_s(line, "hp=0x%llx pct=0x%x", &g_hpBar, &g_hpPctOff);
         if (!strncmp(line, "groggy=", 7)) {
@@ -59,7 +59,6 @@ static void ReadLiveFile() {
         sscanf_s(line, "qte=0x%llx vis=0x%x type=0x%x action=0x%x uiaction=0x%x bind=0x%x", &q.addr, &q.vis, &q.type, &q.action,
                  &q.uiaction, &q.bind);
     }
-    fclose(f);
 }
 
 // 惩戒条件（技能 P_Eve_Sword_Normal_LinkAttack1_1 的目标过滤）：敌人 ActorState_Groggy、3m 内、正前方。
@@ -117,6 +116,7 @@ void LiveTick() {
     ULONGLONG now = GetTickCount64();
     if (!g.ok) {
         if (g_live.pc || g_gameWnd) ResetLiveFile();
+        g_liveStamp = 0;
         g_live = Live{};
         g_gameWnd = nullptr;
         return;

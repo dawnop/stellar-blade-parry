@@ -17,6 +17,7 @@ static void SetInt(const wchar_t* key, int v) {
 }
 
 static const wchar_t* kDevices[] = {L"auto", L"keyboard", L"xinput", L"dualsense"};
+static const wchar_t* kSources[] = {L"auto", L"native", L"ue4ss"};
 
 // 自动：跟随游戏语言（%LOCALAPPDATA%\SB\Saved\Config\WindowsNoEditor\GameUserSettings.ini 的 Language=zh-Hans），
 // 读不到再看系统界面语言 / 区域
@@ -61,6 +62,10 @@ void LoadConfig() {
     g_cfg.autoDevice = InputDevice::Auto;
     for (int i = 0; i < 4; i++)
         if (!_wcsicmp(dev, kDevices[i])) g_cfg.autoDevice = (InputDevice)i;
+    GetPrivateProfileStringW(L"sbparry", L"dataSource", L"auto", dev, 32, IniPath().c_str());
+    g_cfg.dataSource = DataSource::Auto;
+    for (int i = 0; i < 3; i++)
+        if (!_wcsicmp(dev, kSources[i])) g_cfg.dataSource = (DataSource)i;
     ApplyLanguage();
     SaveConfig(); // 第一次运行时生成带全部选项的 ini，方便手改
 }
@@ -75,6 +80,7 @@ void SaveConfig() {
     SetInt(L"autoChance", g_cfg.autoChance);
     SetInt(L"autoQte", g_cfg.autoQte);
     WritePrivateProfileStringW(L"sbparry", L"autoDevice", kDevices[(int)g_cfg.autoDevice], IniPath().c_str());
+    WritePrivateProfileStringW(L"sbparry", L"dataSource", kSources[(int)g_cfg.dataSource], IniPath().c_str());
     SetInt(L"autoAimMs", g_cfg.autoAimMs);
     SetInt(L"debugLog", g_cfg.debugLog);
     SetInt(L"uiScale", g_cfg.uiScale);

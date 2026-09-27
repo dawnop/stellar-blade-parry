@@ -115,9 +115,12 @@ local function dumpSteps()
     local waves = waveInfo()
     local rows, index = {}, {}
     dt:ForEachRow(function(name, row)
-        local cg = row.AttackCollisionGroupJsonArray
+        -- 首个判定框的延迟：从 AttackCollisionGroupArray 的 JSON 字符串取（JsonArray 是游戏载入后才解析填进去的，
+        -- 开局导出时可能还空着）。没有碰撞组 = -1
+        local cga = row.AttackCollisionGroupArray:ToString()
         local delay = -1
-        if cg and #cg > 0 then delay = cg[1].DelayTime end
+        local first = cga:match("{[^{}]*}")
+        if first then delay = tonumber(first:match('"DelayTime"%s*:%s*(-?[%d%.]+)') or "") or 0 end
         local ck, cs, cl, cr = findChance(row.StartSelfEffect:ToString(), info)
         local jp, ja, speed = row.AvailableJustParry, row.AvailableJustAction, 0
         local pa = row.UsableNonTargetProjectileAliasArray
@@ -142,7 +145,7 @@ local function dumpSteps()
             name = tostring(name), type = row.Type, dur = row.Duration, next = row.NextStepAlias:ToString(),
             jp = jp, ja = ja, delay = delay, speed = speed,
             -- 范围判定（OverrideTargetFilterAlias，如 BurstAreaSlash_Hit1 = 12m 圆柱）和自身位置生成的伤害效果也是真打
-            real = row.AttackCollisionGroupArray:ToString() ~= "" or #pa > 0 or row.OverrideTargetFilterAlias:ToString() ~= "None" or isWave,
+            real = cga ~= "" or #pa > 0 or row.OverrideTargetFilterAlias:ToString() ~= "None" or isWave,
             ahead = ahead,
             reach = tonumber(row.ActionAssistTargetFilter:ToString():match("^ActionAssist_3D%a+_(%d+)") or "0") / 100,
             ck = ck, cs = cs, cl = cl, cr = cr, mash = row.NextStepAliasWhenLinkBreak:ToString() ~= "None",

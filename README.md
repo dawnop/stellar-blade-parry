@@ -10,7 +10,7 @@
 - 远程攻击（剑气等飞行道具）和冲击波环也会显示：飞行道具按实时位置追踪，冲击波环按游戏数据推算
 - 记录每一次掉血是哪一招打的，方便找出自己漏掉的攻击
 - 中文 / 英文界面，默认跟随游戏的语言设置（读不到时跟随系统语言）
-- 很轻：独立进程，除了 UE4SS 本身不往游戏里注入任何 DLL；叠加层是鼠标可穿透的透明窗口
+- 很轻：独立进程，不往游戏里注入任何 DLL，也不需要 UE4SS（只有游戏更新后读不到数据时才用它兜底）；叠加层是鼠标可穿透的透明窗口
 
 目前在渡鸦 (Raven) 和红莲 (Scarlet，两个阶段) Boss 身上做了完整实测（包括自动弹反）。其他敌人用的是同一套基于游戏数据的逻辑，但还没有逐个验证过。
 
@@ -91,9 +91,31 @@ Took damage -x% (<招式名>, <N>ms after it started)
 
 - Windows 10 / 11
 - 《剑星》PC 版（Steam）；实测版本为 2026-08 的 Steam 版（UE 4.26）
-- **剑星专用版 UE4SS**（见下）；实测版本为 N 网的 “SB UE4SS 1.3”（剑星 N 网页面上的文件 ID 2952，是带剑星专用布局的 RE-UE4SS 4.0-rc 开发版）
+- 不需要 UE4SS，也不需要装任何 mod。只有游戏更新后 SBParry 读不到游戏数据时，才需要装 UE4SS + SBParryBridge 兜底（见下面的“备用方案”）
 
-### 第 1 步：安装剑星专用 UE4SS
+### 运行 sbparry.exe
+
+解压发布包，双击 `sbparry.exe`。游戏开没开都行，它会等游戏启动后自动挂上。
+
+技能步骤表、键位这些数据，SBParry 在自己的进程里直接从游戏内存读（只读）。挂上后几秒内日志里会出现 `Step table loaded: N rows (read directly from the game)`。
+
+发布包内容：
+
+```
+sbparry.exe
+calib_default.tsv      默认校准数据（渡鸦 Raven Boss）
+SBParryBridge\         备用方案用的 UE4SS mod，平时用不到
+```
+
+**游戏请用“无边框”或“窗口”模式**，独占全屏下叠加层显示不出来。
+
+### 备用方案：UE4SS + SBParryBridge（游戏更新后读不到数据时）
+
+SBParry 靠特征码在游戏里找 UE 的对象表和名字表。游戏大更新后可能找不到，这时日志里会有 `UE globals not found`，判定条上没有音符，挂上约 15 秒后提示“读不到游戏数据”。这种情况下可以装 UE4SS 和 SBParryBridge：由 Bridge 把同样的数据导出成文件，SBParry 自动改读这些文件（日志里显示 `Step table loaded: N rows (from SBParryBridge)`）。
+
+#### 1. 安装剑星专用 UE4SS
+
+实测版本为 N 网的 “SB UE4SS 1.3”（剑星 N 网页面上的文件 ID 2952，是带剑星专用布局的 RE-UE4SS 4.0-rc 开发版）。
 
 去 N 网剑星 mod 页面 <https://www.nexusmods.com/stellarblade>，**搜索 “UE4SS”**，下载针对剑星的 UE4SS（“SB UE4SS”，带剑星专用的成员变量/虚表布局）。按它的说明装到游戏目录的 `SB\Binaries\Win64\`。
 
@@ -110,7 +132,7 @@ StellarBlade\SB\Binaries\Win64\
         └── mods.txt
 ```
 
-### 第 2 步：安装 SBParryBridge
+#### 2. 安装 SBParryBridge
 
 1. 把发布包里的 `SBParryBridge` 文件夹整个复制到 `SB\Binaries\Win64\ue4ss\Mods\`
 2. 打开 `ue4ss\Mods\mods.txt`，加一行：
@@ -121,7 +143,7 @@ StellarBlade\SB\Binaries\Win64\
 
    （`SBParryBridge` 文件夹里自带 `enabled.txt`，大多数 UE4SS 版本不改 mods.txt 也会加载；加上这一行更保险。）
 
-Bridge 是个很小的 Lua 脚本，负责把 SBParry 需要的数据导出到它自己的文件夹：
+然后重新启动游戏。Bridge 是个很小的 Lua 脚本，负责把 SBParry 需要的数据导出到它自己的文件夹：
 
 | 文件 | 内容 |
 |---|---|
@@ -130,19 +152,7 @@ Bridge 是个很小的 Lua 脚本，负责把 SBParry 需要的数据导出到�
 | `projectiles.txt` | 对象池里的飞行道具实例、完美弹反/闪避标记、速度 |
 | `keys.txt` | 你当前的按键设置（自动模式用） |
 
-### 第 3 步：运行 sbparry.exe
-
-解压发布包，双击 `sbparry.exe`。游戏开没开都行，它会等游戏启动后自动挂上。
-
-发布包内容：
-
-```
-sbparry.exe
-calib_default.tsv      默认校准数据（渡鸦 Raven Boss）
-SBParryBridge\         复制到 ue4ss\Mods\ 的 mod
-```
-
-**游戏请用“无边框”或“窗口”模式**，独占全屏下叠加层显示不出来。
+这四个文件的内容和 SBParry 直接读到的逐字节相同，所以两种方式用起来没有区别。
 
 ## 自动弹反（默认关闭）
 
@@ -160,7 +170,7 @@ SBParryBridge\         复制到 ue4ss\Mods\ 的 mod
 
 游戏窗口不在前台、或者你正按着 Ctrl / Alt 时，自动模式会暂停，免得模拟的按键和快捷键组合到一起。按下去游戏没有接受的话会再补按一次。完美闪避成功后伊芙有一小段无敌动作，预计在这期间到来的攻击先不按键（按了会被游戏缓存，结束后变成一个时机错掉的闪避，反而躲不开下一下）；如果攻击实际到得更晚、无敌结束时还没到，照常按。
 
-它用的是你在游戏里设置的键位（由 Bridge 从游戏读出），并跟随你最后真正使用的输入设备（自动模式自己模拟的输入不算）：
+它用的是你在游戏里设置的键位（从游戏里读出），并跟随你最后真正使用的输入设备（自动模式自己模拟的输入不算）：
 
 | 设备 | 方式 |
 |---|---|
@@ -187,8 +197,9 @@ SBParryBridge\         复制到 ue4ss\Mods\ 的 mod
 | `autoChance` | 自动模式下是否也处理蓝光/紫光 |
 | `autoQte` | 自动模式下是否也自动惩戒、按过场 QTE（默认 1） |
 | `autoDevice` | `auto` / `keyboard` / `xinput` / `dualsense` |
+| `dataSource` | 游戏数据从哪来：`auto`（默认，直接读游戏内存，读不到再用 SBParryBridge）/ `native`（只直接读）/ `ue4ss`（只用 UE4SS + SBParryBridge）。改了要重启 SBParry |
 | `autoAimMs` | 自动按键时机微调，毫秒，正数 = 更晚 |
-| `debugLog` | 写 `timing.csv` 调试日志 |
+| `debugLog` | 写 `timing.csv` 调试日志；同时把直接读到的数据另存为 `native_*.tsv` / `native_*.txt`（和 Bridge 的导出对比用） |
 | `uiScale` | 判定条缩放，百分比（默认 100） |
 
 ## 常见问题
@@ -200,14 +211,18 @@ SBParryBridge\         复制到 ue4ss\Mods\ 的 mod
 - 判定条和统计面板只在游戏窗口处于前台时显示。
 - 从托盘菜单“打开日志文件”，看有没有报错。
 
-**判定条上没有音符 / 一直显示“等待步骤表”**
-- Bridge 没加载。打开 UE4SS 控制台，看有没有 `[SBParryBridge] exported ... steps` 这行。
-- 检查 `SBParryBridge` 是不是放在 `ue4ss\Mods\` 下面（里面应该直接是 `Scripts\main.lua`，不要多套一层文件夹），`mods.txt` 里有没有 `SBParryBridge : 1`。
-- 确认用的是剑星专用 UE4SS。
-- 装好后 `ue4ss\Mods\SBParryBridge\` 里应该出现 `steps.tsv`。
+**判定条上没有音符 / 提示“读不到游戏数据”**
+- 打开日志，找 `Step table loaded` 这一行。正常情况下挂上游戏后几秒内就会出现。
+- 日志里有 `UE globals not found`，或者约 15 秒后提示“读不到游戏数据”：多半是游戏更新了，SBParry 找不到游戏的数据。按上面的“备用方案”装 UE4SS + SBParryBridge。
+- 已经装了备用方案、提示“等待 SBParryBridge 导出步骤表”的：
+  - Bridge 没加载。打开 UE4SS 控制台，看有没有 `[SBParryBridge] exported ... steps` 这行。
+  - 检查 `SBParryBridge` 是不是放在 `ue4ss\Mods\` 下面（里面应该直接是 `Scripts\main.lua`，不要多套一层文件夹），`mods.txt` 里有没有 `SBParryBridge : 1`。
+  - 确认用的是剑星专用 UE4SS。
+  - 装好后 `ue4ss\Mods\SBParryBridge\` 里应该出现 `steps.tsv`。
 
 **日志里说 Signatures not found（特征码没对上）**
 - 游戏更新后内部代码变了。SBParry 用特征码定位，小更新一般不受影响；大更新可能要等本工具更新。
+- 这一行指的是三个钩子的特征码，没对上就不会挂上游戏，只能等本工具更新。如果只是读游戏数据的那两个没对上（日志里是 `UE globals not found`），钩子照常工作，装上 UE4SS + SBParryBridge 就能继续用。
 
 **安全吗？会不会封号？**
 - 剑星是单机游戏，没有反作弊，也没有排行榜之类的竞技玩法。
@@ -215,7 +230,7 @@ SBParryBridge\         复制到 ue4ss\Mods\ 的 mod
 
 **自动弹反不按**
 - 游戏窗口必须在前台，而且没有按着 Ctrl / Alt（按着时自动模式会暂停）。
-- 检查键位：Bridge 会导出 `keys.txt`，只支持单键（带 Shift/Ctrl/Alt 的组合键会被跳过）。
+- 检查键位：只支持单键（带 Shift/Ctrl/Alt 的组合键会被跳过）。
 - 手柄玩家：先动一下手柄让它识别到当前设备，或在 `sbparry.ini` 里设 `autoDevice`。
 - 自动弹反开启时判定条上会显示 AUTO 标记，先确认它确实开着。
 

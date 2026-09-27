@@ -8,6 +8,9 @@
 // “jmp [rip+0]; dq cave块”，块尾同样用绝对跳转回去。
 // 手柄：把导入表里 XInputGetState / scePadReadState 的槽位指向 cave 里的小函数（不改游戏代码）。
 #include "game.h"
+#include "config.h"
+#include "native.h"
+#include <set>
 #include <tlhelp32.h>
 
 Game g;
@@ -26,6 +29,9 @@ static const char* kSigJudgeHooked = "E9 ?? ?? ?? ?? 48 89 6C 24 10 48 89 74 24 
 static const char* kSigPress = "F3 41 0F 11 86 BC 00 00 00 85 FF 74";
 static const char* kSigStep = "F3 41 0F 11 85 B0 00 00 00 8B 48 18 41 89 8D B4 00 00 00 74";
 static const uint64_t kSigStepHookOff = 0xC;
+// UE 全局对象：GUObjectArray（mov [rip+x],eax 写 ObjFirstGCIndex）、FNamePool（lea rcx,[rip+x]; call 构造; mov byte [已初始化],1）
+static const char* kSigObjArray = "89 05 ?? ?? ?? ?? 85 DB 7F 36 4C 8D 05";
+static const char* kSigNamePool = "48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? C6 05 ?? ?? ?? ?? 01";
 static const uint8_t kOrigJudge[5] = {0x48, 0x89, 0x5C, 0x24, 0x08};
 static const uint8_t kOrigPress[9] = {0xF3, 0x41, 0x0F, 0x11, 0x86, 0xBC, 0x00, 0x00, 0x00};
 static const uint8_t kOrigStep[7] = {0x41, 0x89, 0x8D, 0xB4, 0x00, 0x00, 0x00};
@@ -252,6 +258,7 @@ static void RestoreFrom(const CaveHeader& h, uint64_t cave) {
 }
 
 void Detach(bool restore) {
+    NativeStop();
     if (g.h && restore && g.cave) {
         CaveHeader h{};
         if (Read(g.cave + kCaveHeader, h)) RestoreFrom(h, g.cave);
@@ -299,6 +306,42 @@ static bool RestoreStale(uint64_t hookedJudge) {
     return true;
 }
 
+// rip 相对寻址的目标（disp32 在 at+dispOff，指令长 len）
+static uint64_t RipTarget(uint64_t at, int dispOff, int len) {
+    int32_t d = 0;
+    return Read(at + dispOff, d) ? at + len + d : 0;
+}
+
+// 对象数组和名字池：命中里挑出结构对得上的那个，找到就启动原生导出（不需要 UE4SS）
+static void FindUeGlobals(const std::vector<uint64_t>& objHits, const std::vector<uint64_t>& poolHits) {
+    if (g_cfg.dataSource == DataSource::Ue4ss) {
+        Log(L"[SBParry] dataSource=ue4ss: reading data from SBParryBridge only\n");
+        return;
+    }
+    uint64_t objArray = 0, pool = 0;
+    for (uint64_t a : objHits) {
+        uint64_t x = RipTarget(a, 2, 6), chunks = 0, first = 0;
+        int32_t num = 0;
+        if (Read(x + 0x10, chunks) && Read(x + 0x24, num) && num > 1000 && num < 8 * 1024 * 1024 && Read(chunks, first) && first) {
+            objArray = x;
+            break;
+        }
+    }
+    std::set<uint64_t> tried;
+    for (uint64_t a : poolHits) {
+        uint64_t x = RipTarget(a, 3, 7), blk = 0;
+        if (!tried.insert(x).second) continue;
+        uint8_t e[6] = {};
+        if (Read(x + 0x10, blk) && blk && Rpm(blk, e, 6) && ((e[0] | e[1] << 8) >> 6) == 4 && !memcmp(e + 2, "None", 4)) {
+            pool = x;
+            break;
+        }
+    }
+    if (objArray && pool) NativeStart(g.pid, objArray, pool);
+    else Log(L"[SBParry] UE globals not found (objects %s, names %s)%s\n", objArray ? L"OK" : L"-", pool ? L"OK" : L"-",
+             g_cfg.dataSource == DataSource::Native ? L"; dataSource=native, so no game data" : L"; reading data from SBParryBridge (UE4SS) instead");
+}
+
 // 连接失败：还没写钩子点前分配的 cave 可以直接释放（跳板没有任何代码跳进去）
 static bool AttachFailed(const wchar_t* msg) {
     if (msg) Log(L"%s", msg);
@@ -323,7 +366,7 @@ bool Attach() {
     if (!g.base) { failedPid = 0; return AttachFailed(nullptr); } // 刚启动、模块还没载入：稍后再试
 
     auto sigs = std::vector<std::vector<int>>{ParsePattern(kSigJudge), ParsePattern(kSigJudgeHooked), ParsePattern(kSigPress),
-                                              ParsePattern(kSigStep)};
+                                              ParsePattern(kSigStep), ParsePattern(kSigObjArray), ParsePattern(kSigNamePool)};
     auto hits = ScanAll(sigs);
     if (hits[0].empty() && hits[1].size() == 1) {
         if (!RestoreStale(hits[1][0])) {
@@ -384,6 +427,7 @@ bool Attach() {
         return false;
     }
     failedPid = 0;
+    FindUeGlobals(hits[4], hits[5]);
     RefreshPadHooks();
     Rpm(g.log, &g.readIdx, 4);
     Log(TR("[SBParry] 已连接游戏 pid=%lu（判定 +%llX 按下 +%llX 步骤 +%llX，手柄 XInput %s / DualSense %s）\n",

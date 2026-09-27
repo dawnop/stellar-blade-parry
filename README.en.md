@@ -10,7 +10,7 @@ A rhythm-game style timing trainer for Stellar Blade (PC). A judgement bar shows
 - Ranged attacks (sword waves and other projectiles) and shockwave rings are shown as well: projectiles are tracked live, rings are predicted from game data
 - Every HP loss is logged with the move that caused it, so you can find the attacks you're missing
 - Chinese / English UI, follows the game's language setting by default (or the system language if that can't be read)
-- Lightweight: a separate process, no DLL injected into the game besides UE4SS itself; the overlay is a click-through transparent window
+- Lightweight: a separate process, no DLL injected into the game and no UE4SS needed (it is only a fallback for when a game update breaks data reading); the overlay is a click-through transparent window
 
 Fully tested, including auto parry, against the Raven and Scarlet (both phases) bosses. Other enemies go through the same data-driven logic, but not all of them have been verified in game.
 
@@ -91,15 +91,37 @@ Settings (except one-hit kill) are saved to `sbparry.ini` next to the exe.
 
 - Windows 10 / 11
 - Stellar Blade PC (Steam); tested with the Steam build of 2026-08 (UE 4.26)
-- **The Stellar Blade build of UE4SS** (see below); tested with "SB UE4SS 1.3" from Nexus (file id 2952 on the Stellar Blade Nexus page, a RE-UE4SS 4.0-rc dev build with Stellar Blade specific layouts)
+- No UE4SS and no mods needed. UE4SS + SBParryBridge are only needed as a fallback if a game update stops SBParry from reading the game's data (see "Fallback" below)
 
-### Step 1: install the Stellar Blade UE4SS
+### Run sbparry.exe
+
+Unzip the release and run `sbparry.exe`, before or after starting the game. It waits for the game and attaches automatically.
+
+SBParry reads the skill step table, key bindings and the rest straight from the game's memory, read-only, from its own process. A few seconds after attaching, the log shows `Step table loaded: N rows (read directly from the game)`.
+
+Release layout:
+
+```
+sbparry.exe
+calib_default.tsv      default calibration (Raven boss)
+SBParryBridge\         UE4SS mod for the fallback, not normally needed
+```
+
+**Play in borderless or windowed mode.** Overlays don't show over exclusive fullscreen.
+
+### Fallback: UE4SS + SBParryBridge (if a game update breaks data reading)
+
+SBParry finds the game's UE object and name tables by byte patterns. A big game update may break that; the log then says `UE globals not found`, the bar gets no notes, and about 15 s after attaching a toast says it can't read the game's data. In that case, install UE4SS and SBParryBridge: the bridge exports the same data as files and SBParry reads those instead (the log then says `Step table loaded: N rows (from SBParryBridge)`).
+
+#### 1. Install the Stellar Blade UE4SS
+
+Tested with "SB UE4SS 1.3" from Nexus (file id 2952 on the Stellar Blade Nexus page, a RE-UE4SS 4.0-rc dev build with Stellar Blade specific layouts).
 
 Go to the Nexus Mods Stellar Blade page <https://www.nexusmods.com/stellarblade>, **search for "UE4SS"** and get the Stellar Blade specific build ("SB UE4SS", which ships the Stellar Blade member-variable / vtable layouts). Install it into `SB\Binaries\Win64\` following its instructions.
 
 > The generic RE-UE4SS experimental build from GitHub does **not** work: it crashes on the first engine tick.
 
-### Step 2: install SBParryBridge
+#### 2. Install SBParryBridge
 
 1. Copy the `SBParryBridge` folder from the release into `SB\Binaries\Win64\ue4ss\Mods\`
 2. Add this line to `ue4ss\Mods\mods.txt`:
@@ -110,7 +132,7 @@ Go to the Nexus Mods Stellar Blade page <https://www.nexusmods.com/stellarblade>
 
    (The folder contains an `enabled.txt`, which most UE4SS builds honour on its own; the mods.txt line is the safe option.)
 
-The bridge is a tiny Lua script that exports what SBParry needs into its own folder:
+Then restart the game. The bridge is a tiny Lua script that exports what SBParry needs into its own folder:
 
 | File | Content |
 |---|---|
@@ -119,19 +141,7 @@ The bridge is a tiny Lua script that exports what SBParry needs into its own fol
 | `projectiles.txt` | Pooled projectile instances, perfect parry/dodge flags, speeds |
 | `keys.txt` | Your current key bindings (used by auto mode) |
 
-### Step 3: run sbparry.exe
-
-Unzip the release and run `sbparry.exe`, before or after starting the game. It waits for the game and attaches automatically.
-
-Release layout:
-
-```
-sbparry.exe
-calib_default.tsv      default calibration (Raven boss)
-SBParryBridge\         mod to copy into ue4ss\Mods\
-```
-
-**Play in borderless or windowed mode.** Overlays don't show over exclusive fullscreen.
+These files are byte-for-byte what SBParry reads directly, so both ways behave the same.
 
 ## Auto parry (off by default)
 
@@ -149,7 +159,7 @@ Ctrl+Alt+X turns the finisher and QTEs off on their own; clash and grab mashing 
 
 Auto mode pauses while the game isn't in the foreground or while you hold Ctrl / Alt, so simulated keys never combine with the hotkeys. If the game doesn't take a press, it retries once. Right after a perfect dodge Eve is briefly invulnerable, and hits predicted to arrive during that time get no press for now (the game would buffer it into a mistimed dodge that then misses the next hit); if a hit actually arrives later, after the invulnerability, it is pressed as usual.
 
-It uses your own in-game key bindings (read by the bridge) and follows whichever input device you last used yourself (its own simulated input doesn't count):
+It uses your own in-game key bindings (read from the game) and follows whichever input device you last used yourself (its own simulated input doesn't count):
 
 | Device | Method |
 |---|---|
@@ -176,8 +186,9 @@ Lives next to the exe and is rewritten when you change settings in the app.
 | `autoChance` | Auto mode also handles blue / violet windows |
 | `autoQte` | Auto mode also does finishers and cutscene QTEs (default 1) |
 | `autoDevice` | `auto` / `keyboard` / `xinput` / `dualsense` |
+| `dataSource` | Where game data comes from: `auto` (default: read game memory directly, fall back to SBParryBridge) / `native` (direct only) / `ue4ss` (UE4SS + SBParryBridge only). Restart SBParry after changing it |
 | `autoAimMs` | Auto press timing offset in ms, positive = later |
-| `debugLog` | Write a `timing.csv` debug log |
+| `debugLog` | Write a `timing.csv` debug log; also saves the directly read data as `native_*.tsv` / `native_*.txt` (for comparing with the bridge's export) |
 | `uiScale` | Bar scale in percent (default 100) |
 
 ## FAQ
@@ -189,14 +200,18 @@ Lives next to the exe and is rewritten when you change settings in the app.
 - The bar and stats panel only show while the game window is in the foreground.
 - Use Open log file in the tray menu and check for errors.
 
-**No notes / stuck on "waiting for step table"**
-- The bridge isn't loaded. Open the UE4SS console and look for `[SBParryBridge] exported ... steps`.
-- Check that the folder is `ue4ss\Mods\SBParryBridge\Scripts\main.lua` (no extra nesting) and that `mods.txt` has `SBParryBridge : 1`.
-- Make sure you're using the Stellar Blade UE4SS build.
-- A `steps.tsv` should appear in `ue4ss\Mods\SBParryBridge\`.
+**No notes / "can't read the game's data"**
+- Open the log and look for the `Step table loaded` line. It normally appears within a few seconds of attaching.
+- If the log says `UE globals not found`, or after about 15 s a toast says it can't read the game's data, a game update most likely broke data reading. Install UE4SS + SBParryBridge as described under "Fallback" above.
+- Already using the fallback and the toast says "Waiting for SBParryBridge to export the step table":
+  - The bridge isn't loaded. Open the UE4SS console and look for `[SBParryBridge] exported ... steps`.
+  - Check that the folder is `ue4ss\Mods\SBParryBridge\Scripts\main.lua` (no extra nesting) and that `mods.txt` has `SBParryBridge : 1`.
+  - Make sure you're using the Stellar Blade UE4SS build.
+  - A `steps.tsv` should appear in `ue4ss\Mods\SBParryBridge\`.
 
 **The log says the patterns didn't match**
 - The game update changed the code SBParry looks for. Byte-pattern scanning survives minor patches; bigger ones may need a tool update.
+- This message is about the three hook patterns; without them SBParry doesn't attach at all and needs a tool update. If only the two data-reading patterns fail (the log says `UE globals not found`), the hooks still work and UE4SS + SBParryBridge keep it usable.
 
 **Is it safe? Anti-cheat?**
 - Stellar Blade is a single-player game with no anti-cheat and no competitive features.
@@ -204,7 +219,7 @@ Lives next to the exe and is rewritten when you change settings in the app.
 
 **Auto parry doesn't press anything**
 - The game window must be in the foreground, and Ctrl / Alt must not be held (auto mode pauses while they are).
-- Check your bindings: the bridge writes `keys.txt`; only single keys are used (bindings with Shift/Ctrl/Alt are skipped).
+- Check your bindings: only single keys are used (bindings with Shift/Ctrl/Alt are skipped).
 - Gamepad: touch the pad once so it's detected as the current device, or set `autoDevice`.
 - The bar shows an AUTO mark when auto parry is on.
 

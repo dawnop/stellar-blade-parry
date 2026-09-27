@@ -2,6 +2,7 @@
 #include "config.h"
 #include "game.h"
 #include "live.h"
+#include "native.h"
 #include "tracker.h"
 
 // ---------------------------------------------------------------- 键位
@@ -73,17 +74,13 @@ static void SetDefaults() {
 // keys.txt：Guard=E,ThumbMouseButton,Gamepad_LeftShoulder / MoveForward=W:1,S:-1,Gamepad_LeftY:1
 static void LoadKeys() {
     static ULONGLONG last = 0;
-    static FILETIME lastWrite{};
+    static uint64_t stamp = 0;
+    static std::string text;
     ULONGLONG now = GetTickCount64();
     if (last && now - last < 3000) return;
     last = now;
     if (!g_bind[0].kb.vk && !g_bind[0].kb.mouse) SetDefaults();
-    std::wstring path = BridgeDir() + L"\\keys.txt";
-    WIN32_FILE_ATTRIBUTE_DATA fa;
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa) || !CompareFileTime(&fa.ftLastWriteTime, &lastWrite)) return;
-    lastWrite = fa.ftLastWriteTime;
-    FILE* f = _wfsopen(path.c_str(), L"rb", _SH_DENYNO);
-    if (!f) return;
+    if (BridgeText(BridgeFile::Keys, text, stamp) != TextState::Changed) return;
     // 文件里出现的动作按文件重建（改了键的旧键位不能留着），没列出的键 / 手柄键用默认值
     SetDefaults();
     Binding def[(int)Btn::Count];
@@ -94,7 +91,7 @@ static void LoadKeys() {
         if (!x.pad.xi && !x.pad.ps) x.pad = def[(int)b].pad;
     };
     char line[512];
-    while (fgets(line, sizeof(line), f)) {
+    for (size_t at = 0; NextLine(text, at, line, sizeof(line));) {
         std::string s(line);
         while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
         size_t eq = s.find('=');
@@ -154,7 +151,7 @@ static void LoadKeys() {
         fallback(pos);
         if (axis) fallback(neg);
     }
-    fclose(f);
+    
     Log(TR("[SBParry] 已读取游戏键位\n", "[SBParry] Game key bindings loaded\n"));
 }
 

@@ -151,16 +151,20 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 
 // ---------------------------------------------------------------- 状态与放置
 
-// 连上游戏后的自检：没有 Bridge / 步骤表迟迟没导出时给出提示
+// 连上游戏后的自检：步骤表迟迟读不到时给出提示。平时直接从游戏内存读（native.cpp）；
+// 读不到（多半是游戏更新了）时才需要 SBParryBridge（UE4SS）兜底
 static const wchar_t* StatusText() {
     static ULONGLONG attachedAt = 0;
     if (!g.ok) { attachedAt = 0; return nullptr; }
     if (!attachedAt) attachedAt = GetTickCount64();
     if (StepsLoaded()) return nullptr;
-    if (GetTickCount64() - attachedAt < 8000) return nullptr;
+    if (GetTickCount64() - attachedAt < 15000) return nullptr;
+    if (g_cfg.dataSource == DataSource::Native)
+        return TR("读不到游戏数据（游戏可能更新了）：可以把 sbparry.ini 的 dataSource 改成 auto 并装 UE4SS + SBParryBridge",
+                  "Can't read the game's data (the game may have been updated); set dataSource=auto in sbparry.ini and install UE4SS + SBParryBridge");
     if (GetFileAttributesW(BridgeDir().c_str()) == INVALID_FILE_ATTRIBUTES)
-        return TR("未找到 SBParryBridge：请把它放进 ue4ss\\Mods 并在 mods.txt 启用",
-                  "SBParryBridge not found: copy it into ue4ss\\Mods and enable it in mods.txt");
+        return TR("读不到游戏数据（游戏可能更新了）：可以装 UE4SS + SBParryBridge 兜底",
+                  "Can't read the game's data (the game may have been updated); install UE4SS + SBParryBridge as a fallback");
     return TR("等待 SBParryBridge 导出步骤表…（UE4SS 是否已加载？）", "Waiting for SBParryBridge to export the step table… (is UE4SS loaded?)");
 }
 

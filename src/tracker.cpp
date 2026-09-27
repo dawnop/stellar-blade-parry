@@ -17,6 +17,7 @@
 #include "tracker.h"
 #include "game.h"
 #include "config.h"
+#include "native.h"
 #include "projectiles.h"
 
 std::vector<Note> g_notes;
@@ -231,13 +232,13 @@ void ResetTracker() {
 }
 
 bool LoadSteps() {
-    std::wstring path = BridgeDir() + L"\\steps.tsv";
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, path.c_str(), L"rb") || !f) return false;
+    std::string text;
+    uint64_t stamp = 0;
+    if (BridgeText(BridgeFile::Steps, text, stamp) != TextState::Changed) return false;
     char line[512];
     uint64_t table = 0;
     std::vector<StepInfo> steps;
-    while (fgets(line, sizeof(line), f)) {
+    for (size_t pos = 0; NextLine(text, pos, line, sizeof(line));) {
         if (line[0] == '#') { sscanf_s(line, "#table=0x%llx", &table); continue; }
         StepInfo si{};
         char name[256];
@@ -260,7 +261,6 @@ bool LoadSteps() {
         if (idx != (int)steps.size()) steps.resize(idx);
         steps.push_back(si);
     }
-    fclose(f);
     uint64_t data = 0;
     int32_t num = 0;
     if (!table || steps.empty() || !Read(table + 0x30, data) || !Read(table + 0x38, num) || num != (int)steps.size())
@@ -285,7 +285,8 @@ bool LoadSteps() {
     g_steps.swap(steps);
     g_stepByRow.swap(byRow);
     LoadCalib();
-    Log(TR("[SBParry] 已载入步骤表 %d 行\n", "[SBParry] Step table loaded: %d rows\n"), num);
+    Log(TR("[SBParry] 已载入步骤表 %d 行（%s）\n", "[SBParry] Step table loaded: %d rows (%s)\n"), num,
+        NativeActive() ? L"read directly from the game" : L"from SBParryBridge");
     return true;
 }
 

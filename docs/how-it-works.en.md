@@ -2,14 +2,14 @@
 
 **English** | [中文](how-it-works.md)
 
-For people reading the code, porting to a new game build, or building something similar. Offsets and patterns are for the Steam build of 2026-08 (UE4.26); the definitions in the source (`src/game.h`, `src/hooks.asm`) are authoritative. Unless noted otherwise, measurements in this document were taken against the Raven boss.
+For people reading the code, porting to a new game build, or building something similar. Offsets and patterns are for the Steam build of 2026-08 (UE4.26); the definitions in the source (`src/game.h`, `src/hooks.asm`, `src/ue.cpp`) are authoritative. Unless noted otherwise, measurements in this document were taken against the Raven boss.
 
 ## Architecture
 
 ```
  ┌───────────────────────── SB-Win64-Shipping.exe (game) ─────────────────────────┐
  │                                                                                 │
- │  UE4SS + SBParryBridge (Lua)                  3 code-cave hooks                 │
+ │  UE reflection (objects, names)               3 code-cave hooks                 │
  │   ├─ SkillActiveStepTable ─┐                   ├─ IsJustActionActive entry      │
  │   ├─ Effect / Projectile  ─┤                   ├─ press: writes inst+BC         │
  │   │  / TargetFilter tables │                   └─ step change: mov [r13+B4],ecx │
@@ -23,13 +23,14 @@ For people reading the code, porting to a new game build, or building something 
  │                            │                          ▼                         │
  │                            │                   PadCtrl block (inside the cave)  │
  └────────────────────────────┼──────────────────────────┬────────────────────────┘
-                              │ files                    │ ReadProcessMemory /
-                              ▼                          │ WriteProcessMemory
-       ue4ss/Mods/SBParryBridge/                         │
-         steps.tsv  live.txt  projectiles.txt  keys.txt  │
+                              │ ReadProcessMemory        │ ReadProcessMemory /
+                              │ (read-only, own thread)  │ WriteProcessMemory
+                              │ fallback: files from     │
+                              │ ue4ss/Mods/SBParryBridge/│
                               │                          │
                               ▼                          ▼
  ┌────────────────────────────── sbparry.exe (separate process) ──────────────────┐
+ │  native:  read UE objects / names → steps / live / projectiles / keys text     │
  │  tracker: read events, settle verdicts, predict notes from the step table,     │
  │           calibration (calib.tsv), unhandled/damage log, one-hit kill          │
  │  projectiles: read projectile positions every frame, solve arrival time        │
@@ -40,15 +41,16 @@ For people reading the code, porting to a new game build, or building something 
  └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- sbparry.exe is an external process. No DLL is injected besides UE4SS itself.
+- sbparry.exe is an external process. No DLL is injected, and UE4SS isn't needed.
 - Inside the game there are only three short hook stubs that append events to a ring buffer, plus two redirected gamepad import slots. Everything else is memory reads; the only game data ever written is the step table, by the one-hit-kill toggle (see below).
-- UE4SS only runs the bridge, which exports what is easy to get through UE reflection (step, effect and projectile tables, key bindings, assorted object addresses and field offsets) as text files.
+- What is easy to get through UE reflection (step, effect and projectile tables, key bindings, assorted object addresses and field offsets) sbparry.exe reads from the game's reflection data directly, from outside, and turns into text (see "Reading UE reflection data directly"). SBParryBridge on UE4SS is only a fallback: if that fails, the same-format files it exports are read instead.
 - sbparry.exe is a Windows-subsystem app with no console. The log goes to `sbparry.log` in the program folder and is always in English whatever the UI language (the arguments of `Log(...)` are evaluated inside an `EnglishScope`, so every `TR` in them picks English); the tray menu's "Open log file" item opens it in the default text editor (falling back to Notepad). `sbparry.exe --quit` tells the running instance to restore the game code and exit.
 - The bar and stats panel are hidden while the game window isn't in the foreground, so they don't cover other programs. If some Ctrl+Alt hotkeys fail to register (taken by another program), a toast at startup lists them.
 
 | Source | Role |
 |---|---|
-| `game.cpp` + `hooks.asm` | attach to the game, install / restore hooks and pad stubs |
+| `game.cpp` + `hooks.asm` | attach to the game, install / restore hooks and pad stubs, find the UE globals |
+| `ue.cpp` + `native.cpp` | read UE reflection data from outside and export the step table etc. as text; `BridgeText()` falls back to the bridge's files |
 | `tracker.cpp` | step table → note prediction; events → perfect verdicts, blue/violet verdicts; unhandled and damage log; one-hit kill; `timing.csv` |
 | `projectiles.cpp` | live projectile tracking |
 | `live.cpp` | Eve / enemy / camera via the PlayerController; HP bar, groggy state, cutscene QTE widget, time dilation |
@@ -122,10 +124,10 @@ Skill instances live in one global pool shared by Eve and enemies:
 
 ## Note prediction
 
-1. The bridge dumps SkillActiveStepTable with `ForEachRow` (RowMap order) to `steps.tsv` (columns are listed under "Files exported by the bridge"). The first line `#table=0x…` is the table object address, which sbparry.exe uses to map indices to real row addresses in memory (UE4SS Lua hands out row *copies*, so their addresses are useless); it also spot-checks a few durations to make sure the order matches.
+1. SkillActiveStepTable is exported in RowMap order as `steps.tsv` (the native export reads the RowMap directly, the bridge uses `ForEachRow`; columns are listed under "Exported files"). The first line `#table=0x…` is the table object address, which sbparry.exe uses to map indices to real row addresses in memory (UE4SS Lua hands out row *copies*, so their addresses are useless); it also spot-checks a few durations to make sure the order matches.
 2. The step hook tells sbparry.exe which enemy skill instances are active. Each frame it reads their `+60` (current step), `+B0` and `+B4`; an instance whose `+B0` hasn't moved for 300 ms is treated as idle. The current step's start time comes from the step event's TSC when it is consistent (exact), and is otherwise back-computed as `now − B0`.
 3. From the current step it walks the `NextStepAlias` chain (up to 10 steps or 1.5 s): remaining in the current step = `B4 − B0`, then the durations of the following steps. For each Hit step, settle time = step start + that attack's settle offset (next section).
-4. Only Hit steps that actually hit produce notes. The bridge sets the `real` column when the step has any of:
+4. Only Hit steps that actually hit produce notes. The `real` column of `steps.tsv` is set when the step has any of:
    - an attack collision group (`AttackCollisionGroupArray`);
    - a projectile (`UsableNonTargetProjectileAliasArray` / `UsableTargetProjectileAliasArray`) or a shockwave ring;
    - an area target filter, `OverrideTargetFilterAlias` (e.g. `BurstAreaSlash_Hit1` is a 12 m cylinder);
@@ -168,7 +170,7 @@ The game doesn't settle at the start of the Hit step: the collision has a `Delay
 
 For ranged attacks such as sword waves, the damage comes from the projectile itself, and the Hit step that fires it is short (Raven's back-jump sword wave Hit step lasts 0.1 s). At range, the enemy has long moved on to another step while the wave is still in the air. Ranged attacks are therefore handled in two phases: an estimate from the step before the projectile exists, then live tracking once it is flying.
 
-**Finding them.** Projectiles are `SBProjectile` actors, pooled per type and kept in the level. The bridge lists them with `FindAllOf("SBProjectile")` once per level (whenever the PlayerController changes), then new pool objects are picked up by `NotifyOnNewObject` callbacks (which only queue them) and appended to `projectiles.txt` by the bridge's 200 ms loop. Each line carries the matching ProjectileTable row's (class name minus `_C`) `AvailableJustParry` / `AvailableJustAction` flags and speeds; Eve's own projectiles (`P_…`) are skipped. The game clamps speed to `[MinSpeed, MaxSpeed]`, so the bridge clamps it before exporting: Raven's sword waves have `Speed` 2000 but `MinSpeed` = `MaxSpeed` = 2700, i.e. 27 m/s.
+**Finding them.** Projectiles are `SBProjectile` actors, pooled per type and kept in the level. The native export rescans the object array every 200 ms and appends new ones to `projectiles.txt`; the bridge instead lists them with `FindAllOf("SBProjectile")` once per level (whenever the PlayerController changes), then new pool objects are picked up by `NotifyOnNewObject` callbacks (which only queue them) and appended to `projectiles.txt` by the bridge's 200 ms loop. Each line carries the matching ProjectileTable row's (class name minus `_C`) `AvailableJustParry` / `AvailableJustAction` flags and speeds; Eve's own projectiles (`P_…`) are skipped. The game clamps speed to `[MinSpeed, MaxSpeed]`, so it is clamped before exporting: Raven's sword waves have `Speed` 2000 but `MinSpeed` = `MaxSpeed` = 2700, i.e. 27 m/s.
 
 **Live tracking** (`projectiles.cpp`):
 
@@ -211,7 +213,7 @@ A separate mechanic from JustAction.
   | `_900` | 9 m |
   | `_1500` | 15 m |
 
-  The bridge parses it from the effect row's `ActiveTargetFilterAlias` (e.g. `Enemy_3DArc_450_120_200` = 450 cm).
+  The export parses it from the effect row's `ActiveTargetFilterAlias` (e.g. `Enemy_3DArc_450_120_200` = 450 cm).
 - Eve's side is the `FlashBehindAttack` (blue) and `MoveBackAttack` (violet) commands: the dodge button (command 24) with the move input held for at least 0.1 s at 315°–45° (toward the enemy) for blue or 135°–225° (away) for violet.
 - The bar shows these as spans. A press is judged as success / early / late / wrong direction or range.
   Detection: the step-transition hook sees every step Eve enters. Windows are recorded from the enemy's step-transition timestamp + `startDelayTime`. Eve entering `FlashBehindAttack*_Cast1` / `MoveBackAttack*_Cast1` = success; entering the first step of a normal (or perfect) dodge is graded early/late in frames relative to the window, and a dodge inside the window that didn't trigger means wrong direction or out of range. Eve's step starts 1–2 frames after the key press, so results right at a window edge can be off by a frame.
@@ -230,7 +232,7 @@ Whenever an enemy enters a Hit step (`real` = 1, not a mash step), a pending hit
 
 ### Damage (HP bar)
 
-Eve's HP lives in native code and isn't easy to get at, so the bridge exports the HUD's HP bar instead — the `ProgressBar` at `WB_MainHUD_PlayerInfo.WidgetTree.ProgressBar_HP` — together with its `Percent` field offset. sbparry.exe reads this 0–1 value every frame.
+Eve's HP lives in native code and isn't easy to get at, so the HUD's HP bar is exported instead — the `ProgressBar` at `WB_MainHUD_PlayerInfo.WidgetTree.ProgressBar_HP` — together with its `Percent` field offset. sbparry.exe reads this 0–1 value every frame.
 
 The bar drop is animated over several frames. Consecutive drops are merged into one event: the first dropping frame is taken as roughly the hit time, and at that moment the event is attributed to the most recently started enemy Hit step (within 3 s — ranged attacks can land after their step has ended). Once the bar has stopped dropping for 0.3 s, one line with the total is logged, e.g. "Took damage −12.3% (step, 630ms after it started)". The shockwave-ring measurements above were obtained this way.
 
@@ -240,7 +242,7 @@ When an enemy is broken and falls, pressing Y (heavy attack) performs a finisher
 
 `ActorState` is native and not reachable through reflection. A memory diff turned up two flags that change at the same moment:
 
-- some boss blueprints (Raven among them) have an `IsGroggy` bool, at a different offset per class. The bridge walks the `SBCharacter` instances and exports `class address:offset` per class;
+- some boss blueprints (Raven among them) have an `IsGroggy` bool, at a different offset per class. The export walks the `SBCharacter` instances and exports `class address:offset` per class;
 - `SBCharacter.bActiveWeakPointCollision` flips at the same time and serves as a generic fallback for enemies without `IsGroggy`.
 
 sbparry.exe reads the target enemy's class pointer (`+0x10`), uses its `IsGroggy` offset if known and `bActiveWeakPointCollision` otherwise, and tests the low bit. Both were observed to go 0→1 when the finisher becomes possible and back to 0 once it starts, so it never fires twice.
@@ -253,8 +255,8 @@ The catch: the flag rises the moment the enemy breaks, but the finisher only bec
 
 ## Mashing and cutscene QTEs
 
-- **Break-free mashing**: enemy steps with a `NextStepAliasWhenLinkBreak` are clashes or grabs (Raven, Scarlet and several other bosses have them); the bridge exports this as the `mash` column. While an enemy is in such a step, auto mode mashes light attack at about 14 Hz (a 35 ms press every 70 ms, both stretched by Eve's time dilation).
-- **Cutscene QTEs**: QTEs in cutscenes are a `SBSequencerQTEWidget` (created the first time a cutscene plays). The bridge exports its address and the offsets of `Visibility`, `InputType`, `InputAction`, `UIInputAction` and `bBindInput`. When the widget is visible (`ESlateVisibility` 0/3/4) and has an input bound, sbparry.exe reads the FName comparison index in `InputAction` (or `UIInputAction` if that is 0), looks it up in the action-name indices exported under `@names` in `keys.txt`, and presses that action; unknown actions fall back to light attack.
+- **Break-free mashing**: enemy steps with a `NextStepAliasWhenLinkBreak` are clashes or grabs (Raven, Scarlet and several other bosses have them); this is exported as the `mash` column. While an enemy is in such a step, auto mode mashes light attack at about 14 Hz (a 35 ms press every 70 ms, both stretched by Eve's time dilation).
+- **Cutscene QTEs**: QTEs in cutscenes are a `SBSequencerQTEWidget` (created the first time a cutscene plays). Its address is exported and the offsets of `Visibility`, `InputType`, `InputAction`, `UIInputAction` and `bBindInput`. When the widget is visible (`ESlateVisibility` 0/3/4) and has an input bound, sbparry.exe reads the FName comparison index in `InputAction` (or `UIInputAction` if that is 0), looks it up in the action-name indices exported under `@names` in `keys.txt`, and presses that action; unknown actions fall back to light attack.
 
 ## Auto mode
 
@@ -278,7 +280,7 @@ Priority per frame is notes > finisher > mashing. The same note is recomputed ev
 - **Pause**: nothing is sent while the game isn't in the foreground or while Ctrl / Alt is held (e.g. right after a hotkey, so the keys don't combine), and all simulated input is released.
 - **Hold times**: the game checks inputs in game time (a dodge needs 0.02 s held, the blue/violet direction 0.1 s). When Eve is slowed (boss-burst slow motion etc.), real hold times are stretched by Eve's time dilation (`WorldSettings.TimeDilation` × Eve's `CustomTimeDilation` at `+0xB0`).
 
-Keys come from the bridge's `keys.txt` (Guard / Evade / AttackLight / AttackStrong / Jump / Interaction_Key action mappings and MoveForward / MoveRight axis mappings from `Default__InputSettings`; bindings with modifiers are skipped).
+Keys come from `keys.txt` (Guard / Evade / AttackLight / AttackStrong / Jump / Interaction_Key action mappings and MoveForward / MoveRight axis mappings from `Default__InputSettings`; bindings with modifiers are skipped).
 
 The device follows whatever the player last used **for real**, or is pinned with `autoDevice`:
 
@@ -341,9 +343,46 @@ Cave layout (16 KB):
 
 All blocks are written in `src/hooks.asm` (ml64). At runtime each block is copied into the cave, its placeholder constants (log / PadCtrl address) are patched, and its last 8 bytes receive the return address or the original function pointer.
 
-## Files exported by the bridge
+## Reading UE reflection data directly
 
-All files go to `ue4ss/Mods/SBParryBridge/`.
+The step, effect and projectile tables, key bindings, object addresses and field offsets used to come only from the bridge running on UE4SS. sbparry.exe now reads them itself (`src/ue.cpp`, `src/native.cpp`): a background thread with its own read-only process handle (`PROCESS_VM_READ`) reads the game's UE reflection data from outside with `ReadProcessMemory` and produces `steps.tsv` / `live.txt` / `projectiles.txt` / `keys.txt` text in exactly the bridge's format (verified byte-for-byte identical against the bridge's output). Measured cost for the whole tool: about 3 ms of CPU per second, about 31 MB working set.
+
+**Finding the globals.** Once the three hooks are in, the results of the same code scan used for the hooks are used to find two globals:
+
+```
+GUObjectArray  89 05 ?? ?? ?? ?? 85 DB 7F 36 4C 8D 05                      rip-relative target of the first mov
+FNamePool      48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? C6 05 ?? ?? ?? ?? 01    target of lea rcx; block 0 must start with the "None" entry
+```
+
+The object array must also have a plausible element count and a non-null first chunk. The export thread only starts if both are found; otherwise the log says `UE globals not found` and the bridge is used right away.
+
+**Object array.** `GUObjectArray+0x10` is a chunked array (64K `FUObjectItem`s of 0x18 bytes per chunk: object pointer, flags). Each pass re-reads all slots, but only slots whose object pointer changed get their object header (class, name, outer, flags) re-read, so it is incremental. Instance lists skip CDOs / archetypes and PendingKill / Unreachable objects; lookup by path compares the name and the outer (package) name.
+
+**Name pool.** Blocks are 128 KB; the high 16 bits of an FName index are the block, the low 16 bits × 2 the offset in it; each entry starts with a 2-byte header, bit0 = wide, length = header >> 6. Index → string is a direct (cached) read. String → index: the pool holds over a million names, so only a registered set (table paths, class names, key action names, …) is indexed; after one full scan only newly added names are scanned.
+
+**Fields and data tables** (standard UE 4.26 layout, the same as UE4SS's MemberVariableLayout):
+
+| Struct | Field | Offset |
+|---|---|---|
+| UObject | Class / Name / Outer | 0x10 / 0x18 / 0x20 |
+| UStruct | SuperStruct / ChildProperties / PropertiesSize | 0x40 / 0x50 / 0x58 |
+| FField | Class / Next / Name | 0x08 / 0x20 / 0x28 |
+| FProperty | ElementSize / Offset_Internal | 0x3C / 0x4C |
+| FArrayProperty / FStructProperty | Inner / Struct | 0x78 |
+| FBoolProperty | ByteOffset / FieldMask | 0x79 / 0x7B |
+| UDataTable | RowStruct / RowMap | 0x28 / 0x30 (RowMap elements are 0x18 bytes: FName + row pointer, in array order) |
+
+A field is looked up by name along `ChildProperties` → `Next`, then in the `SuperStruct`. Data table rows are read in RowMap order, fields are taken at the offsets above, and JSON string fields are parsed with the same patterns as the bridge.
+
+**Cadence.** The thread runs a pass every 200 ms: the step table is tried every 2 s and not exported again once it succeeded; `live.txt` is recomputed every second and `keys.txt` every 3 s; projectiles are found by rescanning the object array for `SBProjectile` instances on every pass (instead of the bridge's `NotifyOnNewObject`), new ones are appended, and a new PlayerController starts a new `#gen`. Unchanged content doesn't count as an update.
+
+**Readers and fallback.** tracker / live / projectiles / autoplay all get their text through `BridgeText()`: the native export if it has content, otherwise the bridge's file (still ignoring files older than the game process). For the first 10 s after the export thread starts it waits for the native export; only if a file still has no content after that, or the globals weren't found at all, does it read the bridge's file. When the step table loads, the log names the source: `Step table loaded: N rows (read directly from the game)` or `(from SBParryBridge)`. If there is still no step table 15 s after attaching, a toast says the game's data can't be read and suggests UE4SS + SBParryBridge as a fallback (or says it is waiting for the bridge, if the bridge folder exists). `dataSource` in `sbparry.ini` can pin the source: `native` never reads the bridge's files, `ue4ss` doesn't start the native export and only reads the bridge's files (the default `auto` is the behaviour above; read at startup).
+
+With `debugLog=1`, the four native texts are also saved next to sbparry.exe as `native_steps.tsv`, `native_live.txt`, `native_projectiles.txt` and `native_keys.txt`, for diffing against the bridge's files.
+
+## Exported files
+
+The native export only lives in memory (cadence in the previous section); the bridge writes to `ue4ss/Mods/SBParryBridge/`, and the timings in the table below are the bridge's. The content is byte-for-byte the same.
 
 | File | When | Content |
 |---|---|---|
@@ -364,7 +403,7 @@ All files go to `ue4ss/Mods/SBParryBridge/`.
 | 3 | duration (s) |
 | 4 | index of the `NextStepAlias` step, −1 = none |
 | 5 / 6 | parry-able / perfect-dodgeable (`AvailableJustParry` / `AvailableJustAction`; taken from the projectile table for projectile steps; OR'ed with the effect's `AvailableJustEvade` for rings and damage zones) |
-| 7 | first attack collision's `DelayTime`, −1 = no collision group |
+| 7 | first attack collision's `DelayTime`: the `DelayTime` of the first object in the `AttackCollisionGroupArray` JSON string (0 if it has none), −1 if the string is empty (no collision group). Not `AttackCollisionGroupJsonArray`: the game only fills that some time after load, so an early export saw it empty and wrote −1 for about 90 steps |
 | 8 / 9 / 10 / 11 | chance window: kind (0 / 1 blue / 2 violet), start, length (s), range (m) |
 | 12 | mash (1 = has `NextStepAliasWhenLinkBreak`) |
 | 13 | projectile / ring speed (m/s), 0 = melee |
@@ -384,7 +423,7 @@ hp=0x… pct=0x…                      Eve's HP ProgressBar and its Percent off
 qte=0x… vis=0x… type=0x… action=0x… uiaction=0x… bind=0x…   cutscene QTE widget and field offsets
 ```
 
-`FindFirstOf` / `FindAllOf` walk every UObject (about 30 ms), so searches are rationed:
+The bridge's `FindFirstOf` / `FindAllOf` walk every UObject (about 30 ms), so searches are rationed:
 
 - the PlayerController is re-searched every 5 s while the cached one is invalid;
 - when the PlayerController changes (new game / load / level change), the HP bar, QTE widget and enemy classes are all scanned once;

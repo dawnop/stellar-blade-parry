@@ -1,0 +1,48 @@
+# Build output
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.res
+*.map
+build/
+bin/
+obj/
+out/
+dist/
+*.zip
+
+# Visual Studio / editors
+.vs/
+.vscode/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+ipch/
+
+# Runtime files written next to sbparry.exe
+sbparry.ini
+sbparry.log
+calib.tsv
+timing.csv
+
+# Files exported by the bridge at runtime
+mod/SBParryBridge/steps.tsv
+mod/SBParryBridge/steps.tsv.tmp
+mod/SBParryBridge/live.txt
+mod/SBParryBridge/keys.txt
+mod/SBParryBridge/projectiles.txt
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Icon generator preview
+tools/icon/preview.png

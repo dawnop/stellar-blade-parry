@@ -95,7 +95,7 @@ Settings (except one-hit kill) are saved to `sbparry.ini` next to the exe.
 
 ### Run sbparry.exe
 
-Download `sbparry.exe` from the Releases page, put it in any folder and run it (settings, the log and local calibration are written next to it), before or after starting the game. It waits for the game and attaches automatically.
+Download `sbparry.exe` from the [Releases page](https://github.com/dawnop/stellar-blade-parry/releases/latest) or [Nexus Mods](https://www.nexusmods.com/stellarblade/mods/3903), put it in any folder and run it (settings, the log and local calibration are written next to it), before or after starting the game. It waits for the game and attaches automatically.
 
 SBParry reads the skill step table, key bindings and the rest straight from the game's memory, read-only, from its own process. A few seconds after attaching, the log shows `Step table loaded: N rows (read directly from the game)`.
 

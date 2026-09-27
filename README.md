@@ -95,7 +95,7 @@ Took damage -x% (<招式名>, <N>ms after it started)
 
 ### 运行 sbparry.exe
 
-从 Release 页面下载 `sbparry.exe`，放进任意文件夹双击运行即可（设置、日志、本机校准会写在它旁边）。游戏开没开都行，它会等游戏启动后自动挂上。
+从 [Release 页面](https://github.com/dawnop/stellar-blade-parry/releases/latest) 或 [Nexus Mods](https://www.nexusmods.com/stellarblade/mods/3903) 下载 `sbparry.exe`，放进任意文件夹双击运行即可（设置、日志、本机校准会写在它旁边）。游戏开没开都行，它会等游戏启动后自动挂上。
 
 技能步骤表、键位这些数据，SBParry 在自己的进程里直接从游戏内存读（只读）。挂上后几秒内日志里会出现 `Step table loaded: N rows (read directly from the game)`。
 

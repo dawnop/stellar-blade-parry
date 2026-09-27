@@ -16,7 +16,7 @@ copy /y build\sbparry.exe dist\ >nul || exit /b 1
 copy /y mod\SBParryBridge\Scripts\main.lua "%OUT%\SBParryBridge\Scripts\" >nul || exit /b 1
 copy /y mod\SBParryBridge\enabled.txt "%OUT%\SBParryBridge\" >nul || exit /b 1
 copy /y README.md "%OUT%\" >nul
-copy /y README.en.md "%OUT%\" >nul
+copy /y README.zh-CN.md "%OUT%\" >nul
 copy /y LICENSE "%OUT%\LICENSE.txt" >nul
 if exist "%OUT%.zip" del "%OUT%.zip"
 rem Windows 10 起自带的 tar（bsdtar）打标准 zip（路径用 /）

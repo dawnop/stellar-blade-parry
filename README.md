@@ -1,281 +1,270 @@
-# SBParry — 剑星 完美弹反 / 完美闪避 时机练习器
+# SBParry — Stellar Blade parry / dodge timing trainer
 
-[English](README.en.md) | **中文**
+**English** | [中文](README.zh-CN.md)
 
-《剑星》(Stellar Blade) PC 版的弹反/闪避节奏训练工具。像音游一样，在屏幕上用一条判定条提前约 1 秒显示敌人接下来的每一下攻击；你按下格挡或闪避后，直接读取**游戏自己的判定结果**，告诉你是 **PERFECT** 还是**早了几帧**。
+A rhythm-game style timing trainer for Stellar Blade (PC). A judgement bar shows each upcoming enemy hit about one second ahead. When you guard or dodge, SBParry reads **the game's own verdict** and tells you whether it was **PERFECT** or **how many frames early**.
 
-- 攻击时机来自游戏自身的技能步骤表，不是录像、也不是手打的时间轴
-- 判定结果来自游戏内部的完美判定函数，和游戏里实际触发的完美弹反/闪避一致
-- 同时显示蓝光（闪到身后）/ 紫光（后撤）窗口，并判断方向、距离是否正确
-- 远程攻击（剑气等飞行道具）和冲击波环也会显示：飞行道具按实时位置追踪，冲击波环按游戏数据推算
-- 记录每一次掉血是哪一招打的，方便找出自己漏掉的攻击
-- 中文 / 英文界面，默认跟随游戏的语言设置（读不到时跟随系统语言）
-- 很轻：独立进程，不往游戏里注入任何 DLL，也不需要 UE4SS（只有游戏更新后读不到数据时才用它兜底）；叠加层是鼠标可穿透的透明窗口
+- Hit timing comes from the game's own skill step table, not from recordings or hand-made timelines
+- The verdict comes from the game's internal perfect-judgement function, so it matches what actually happens in game
+- Blink (blue) and Repulse (violet) windows are shown too, and judged for timing, direction and range
+- Ranged attacks (sword waves and other projectiles) and shockwave rings are shown as well: projectiles are tracked live, rings are predicted from game data
+- Every HP loss is logged with the move that caused it, so you can find the attacks you're missing
+- Chinese / English UI, follows the game's language setting by default (or the system language if that can't be read)
+- Lightweight: a separate process, no DLL injected into the game and no UE4SS needed (it is only a fallback for when a game update breaks data reading); the overlay is a click-through transparent window
 
-目前在渡鸦 (Raven) 和红莲 (Scarlet，两个阶段) Boss 身上做了完整实测（包括自动弹反）。其他敌人用的是同一套基于游戏数据的逻辑，但还没有逐个验证过。
+Fully tested, including auto parry, against the Raven and Scarlet (both phases) bosses. Other enemies go through the same data-driven logic, but not all of them have been verified in game.
 
-> 演示视频：TODO（B 站链接，发布后补上）
+> Demo video: TODO (Bilibili link after release)
 
-## 截图
+## Screenshots
 
-<!-- TODO: 补截图/GIF，放在 docs/images/ 下 -->
-<!-- ![判定条](docs/images/bar.png) -->
-<!-- ![统计面板](docs/images/panel.png) -->
-<!-- ![演示](docs/images/demo.gif) -->
+<!-- TODO: add screenshots / GIF under docs/images/ -->
+<!-- ![Judgement bar](docs/images/bar.png) -->
+<!-- ![Stats panel](docs/images/panel.png) -->
+<!-- ![Demo](docs/images/demo.gif) -->
 
-*（截图待补）*
+*(screenshots coming)*
 
-## 判定条怎么看
+## Reading the bar
 
-音符随时间移向判定线，到达判定线的那一刻就是游戏结算这一下攻击的时刻。音符从右往左移动，判定线在左端。
+Notes move toward the judgement line; the moment a note reaches the line is when the game settles that hit. Notes scroll from right to left; the judgement line is at the left end.
 
-| 颜色 | 含义 | 该怎么做 |
+| Colour | Meaning | What to do |
 |---|---|---|
-| 青色 | 可以完美弹反（也可以完美闪避） | 格挡或闪避 |
-| 琥珀色 | 只能完美闪避（抓取等） | 闪避，格挡没用 |
-| 红色 | 既不能弹反也不能完美闪避 | 跑开 / 拉开距离 |
-| 薄荷绿（跳跃） | 贴地扩散的冲击波环（比如渡鸦后跳连招最后落地时的那一圈） | **跳过去**。闪避躲不掉（实测时机再准也会被打中），环只有 40 cm 左右高 |
-| 蓝色长条 | 蓝光窗口 | 窗口内 **朝敌人推摇杆 + 闪避**，闪到敌人身后 |
-| 紫色长条 | 紫光窗口 | 窗口内 **往后拉摇杆 + 闪避**，后撤 |
-| 判定线处的绿色区域 | 现在按下就是完美 | 音符完全进入绿区时会高亮 |
+| Cyan | Parry-able (also perfect-dodge-able) | Guard or dodge |
+| Amber | Perfect-dodge only (grabs etc.) | Dodge; guarding won't work |
+| Red | Neither parry nor perfect dodge possible | Get away |
+| Mint (JUMP) | A shockwave ring spreading along the ground (e.g. the ring when Raven lands at the end of her back-jump combo) | **Jump over it.** Dodging doesn't help (even well-timed dodges got hit in testing); the ring is only about 40 cm tall |
+| Blue span | Blink window (blue flash) | **Move toward the enemy + dodge** to teleport behind them |
+| Violet span | Repulse window (purple flash) | **Move back + dodge** |
+| Green zone at the line | Pressing now would be perfect | Lights up brightly when a note is fully inside |
 
-判定结果：
+Verdicts:
 
-- **PERFECT**：完美弹反 / 完美闪避成功
-- **早 n 帧 (EARLY)**：按早了，差 n 帧（按 60 fps 换算）
-- 蓝光 / 紫光：成功 / 早了 / 晚了 / 方向或距离不对
-- **未应对 (UNHANDLED)**：敌人的攻击在够得着你的距离内结算了，而你什么都没做（没有格挡、闪避、闪现，也没有跳）
+- **PERFECT**: perfect parry / perfect dodge
+- **EARLY n frames**: pressed too early by n frames (at 60 fps)
+- Blink / Repulse: success / early / late / wrong direction or range
+- **UNHANDLED**: an enemy attack landed while you were in reach and you did nothing (no guard, dodge, blink or jump)
 
-困难难度下剑形态的完美窗口是 0.23 秒，但游戏是按帧扣时间、并且要求结算那一帧窗口还有剩余，所以 60 fps 下实际能用的是 **13 帧（约 217 ms）**。判定条上的绿区就是按这个有效长度画的。
+On Hard, sword-form parry/dodge has a 0.23 s just-action window. The game decrements it per frame and requires time left on the settling frame, so at 60 fps the usable window is **13 frames (about 217 ms)**. The green zone is drawn with this effective length.
 
-### 远程攻击、冲击波环和范围攻击
+### Ranged attacks, shockwave rings and area attacks
 
-- **飞行道具**（比如渡鸦的剑气）：每一帧读取道具的真实位置，速度取自游戏的飞行道具表，预测它什么时候碰到伊芙（接触距离实测约 1.05 m）。道具还没生成时，先按距离和速度给一个估计值；等道具出现后换成实时追踪。音符的位置做了平滑，切换时不会跳一下。
-- **冲击波环**：按游戏数据里的初始半径和扩散速度推算到达时间。渡鸦的环是 1 秒内从 2.8 m 扩到 20.4 m。所有 Boss 一共有 21 种环形攻击走同样的处理，但除了渡鸦，其他的还没在游戏里实测。
-- **范围攻击**：对半径内所有目标都生效的攻击（比如渡鸦 BurstAreaSlash 的第一下，半径 12 m），以及在原地生成伤害区域的攻击（比如红莲分身的斩击）也会显示。
-- 纯脚本演出的“命中”不显示，比如拼刀、抓取之后的追加动作，这些没有真正的攻击判定。
+- **Projectiles** (e.g. Raven's sword waves): SBParry reads the projectile's actual position every frame, takes its speed from the game's projectile table, and predicts when it reaches Eve (contact distance measured at about 1.05 m). Before the projectile spawns, the note is placed from a distance/speed estimate, then switches to live tracking once it exists. The note is smoothed, so it doesn't jump at the switch.
+- **Shockwave rings**: arrival time is computed from the ring's initial radius and expansion speed in the game data. Raven's ring grows from 2.8 m to 20.4 m in 1 s. The same handling covers 21 ring attacks across the bosses, but only Raven's has been tested in game so far.
+- **Area attacks** that hit everything within a radius (e.g. the first hit of Raven's BurstAreaSlash, 12 m), and attacks that spawn a damage zone where they stand (e.g. Scarlet's clone slashes), are shown.
+- Purely scripted "hits" such as clash or grab follow-ups have no real hit detection and are not shown.
 
-### 受伤记录
+### Damage log
 
-SBParry 会读取伊芙的血条。每掉一次血，就在程序目录下的 `sbparry.log` 里写一行：
+SBParry reads Eve's HP bar. Every time it drops, a line goes to `sbparry.log` in the program folder:
 
 ```
-Took damage -x% (<招式名>, <N>ms after it started)
+Took damage -x% (move name, N ms after it started)
 ```
 
-想知道到底是哪一招打中了自己，看这里就行。
+That's the quickest way to find out which move actually hit you.
 
-## 快捷键
+## Hotkeys
 
-| 快捷键 | 功能 |
+| Hotkey | Action |
 |---|---|
-| Ctrl+Alt+M | 判定条位置：Boss 血条下方（默认）/ 跟随敌人（限制在画面中央区域） |
-| Ctrl+Alt+L | 显示 / 隐藏判定条 |
-| Ctrl+Alt+P | 显示 / 隐藏统计面板（默认隐藏） |
-| Ctrl+Alt+O | 统计面板换一个角落 |
-| Ctrl+Alt+J | 切换语言 中 / EN |
-| Ctrl+Alt+A | 自动弹反 开 / 关（默认**关**） |
-| Ctrl+Alt+X | 自动惩戒 / QTE 开 / 关（默认开；不影响拼刀、被抓时的连打） |
-| Ctrl+Alt+K | 一击必杀 开 / 关（练习时跳过 Boss 阶段用；每次启动都是关，不保存） |
-| Ctrl+Alt+Q | 退出（会还原游戏代码） |
+| Ctrl+Alt+M | Bar placement: under the boss HP bar (default) / follow the enemy (clamped to the central screen area) |
+| Ctrl+Alt+L | Show / hide the bar |
+| Ctrl+Alt+P | Show / hide the stats panel (hidden by default) |
+| Ctrl+Alt+O | Move the stats panel to the next corner |
+| Ctrl+Alt+J | Language 中 / EN |
+| Ctrl+Alt+A | Auto parry on / off (**off** by default) |
+| Ctrl+Alt+X | Auto finisher / QTE on / off (on by default; clash and grab mashing are not affected) |
+| Ctrl+Alt+K | One-hit kill on / off (for skipping boss phases while practising; always starts off, not saved) |
+| Ctrl+Alt+Q | Quit (restores the game code) |
 
-托盘图标的右键菜单里也有同样的开关，另外还有“打开日志文件”和“退出”。程序没有控制台，日志写在程序目录下的 `sbparry.log`（不论界面语言，日志一律是英文），“打开日志文件”会用系统默认的文本编辑器打开它（没有关联程序时用记事本）。如果有快捷键被别的程序占用、注册失败，启动时会弹提示列出是哪几个，这些功能可以改用托盘菜单。`sbparry.exe --quit` 会让正在运行的 SBParry 还原游戏代码后退出。
+The tray icon menu has the same toggles, plus Open log file and Quit. The program has no console; the log goes to `sbparry.log` in the program folder (always in English), and Open log file opens it in your default text editor (Notepad if none is associated). If some hotkeys can't be registered because another program holds them, a toast at startup lists them; use the tray menu for those. `sbparry.exe --quit` tells a running instance to restore the game code and exit.
 
-除一击必杀外，所有设置自动保存在 exe 旁边的 `sbparry.ini`。
+Settings (except one-hit kill) are saved to `sbparry.ini` next to the exe.
 
-**一击必杀**：把伊芙所有攻击步骤的伤害倍率 ×1000（在内存里改游戏的技能步骤表），用来练某个阶段时快速跳过前面的阶段。关掉、退出、Windows 注销 / 关机或 SBParry 自己崩溃时会还原；只有在任务管理器里强行结束 SBParry 时还不了，这时要到游戏重启才恢复。
+**One-hit kill** multiplies the damage of all of Eve's attack steps by 1000 (by editing the game's skill step table in memory), so you can get past earlier phases quickly when practising a later one. It's undone when you turn it off, quit, log off / shut down Windows, or if SBParry itself crashes. Only killing SBParry from Task Manager leaves it in place, until the game is restarted.
 
-## 安装
+## Installation
 
-### 需要
+### Requirements
 
 - Windows 10 / 11
-- 《剑星》PC 版（Steam）；实测版本为 2026-08 的 Steam 版（UE 4.26）
-- 不需要 UE4SS，也不需要装任何 mod。只有游戏更新后 SBParry 读不到游戏数据时，才需要装 UE4SS + SBParryBridge 兜底（见下面的“备用方案”）
+- Stellar Blade PC (Steam); tested with the Steam build of 2026-08 (UE 4.26)
+- No UE4SS and no mods needed. UE4SS + SBParryBridge are only needed as a fallback if a game update stops SBParry from reading the game's data (see "Fallback" below)
 
-### 运行 sbparry.exe
+### Run sbparry.exe
 
-从 [Release 页面](https://github.com/dawnop/stellar-blade-parry/releases/latest) 或 [Nexus Mods](https://www.nexusmods.com/stellarblade/mods/3903) 下载 `sbparry.exe`，放进任意文件夹双击运行即可（设置、日志、本机校准会写在它旁边）。游戏开没开都行，它会等游戏启动后自动挂上。
+Download `sbparry.exe` from the [Releases page](https://github.com/dawnop/stellar-blade-parry/releases/latest) or [Nexus Mods](https://www.nexusmods.com/stellarblade/mods/3903), put it in any folder and run it (settings, the log and local calibration are written next to it), before or after starting the game. It waits for the game and attaches automatically.
 
-技能步骤表、键位这些数据，SBParry 在自己的进程里直接从游戏内存读（只读）。挂上后几秒内日志里会出现 `Step table loaded: N rows (read directly from the game)`。
+SBParry reads the skill step table, key bindings and the rest straight from the game's memory, read-only, from its own process. A few seconds after attaching, the log shows `Step table loaded: N rows (read directly from the game)`.
 
-Release 页面还有一个 zip，内容是：
-
-```
-sbparry.exe            和单独下载的是同一个文件
-SBParryBridge\         备用方案用的 UE4SS mod，平时用不到
-README.md / README.en.md / LICENSE.txt
-```
-
-默认的时机校准数据（渡鸦、红莲等）已经编进 exe 里。
-
-**游戏请用“无边框”或“窗口”模式**，独占全屏下叠加层显示不出来。
-
-### 备用方案：UE4SS + SBParryBridge（游戏更新后读不到数据时）
-
-SBParry 靠特征码在游戏里找 UE 的对象表和名字表。游戏大更新后可能找不到，这时日志里会有 `UE globals not found`，判定条上没有音符，挂上约 15 秒后提示“读不到游戏数据”。这种情况下可以装 UE4SS 和 SBParryBridge：由 Bridge 把同样的数据导出成文件，SBParry 自动改读这些文件（日志里显示 `Step table loaded: N rows (from SBParryBridge)`）。
-
-#### 1. 安装剑星专用 UE4SS
-
-实测版本为 N 网的 “SB UE4SS 1.3”（剑星 N 网页面上的文件 ID 2952，是带剑星专用布局的 RE-UE4SS 4.0-rc 开发版）。
-
-去 N 网剑星 mod 页面 <https://www.nexusmods.com/stellarblade>，**搜索 “UE4SS”**，下载针对剑星的 UE4SS（“SB UE4SS”，带剑星专用的成员变量/虚表布局）。按它的说明装到游戏目录的 `SB\Binaries\Win64\`。
-
-> 注意：GitHub 上通用的 RE-UE4SS experimental 版**不能用**，进游戏第一帧就会崩溃。
-
-装好后游戏目录大概是这样：
+The Releases page also has a zip containing:
 
 ```
-StellarBlade\SB\Binaries\Win64\
-├── SB-Win64-Shipping.exe
-├── (UE4SS 的加载器 dll，文件名以你下载的版本为准)
-└── ue4ss\
-    └── Mods\
-        └── mods.txt
+sbparry.exe            the same file as the standalone download
+SBParryBridge\         UE4SS mod for the fallback, not normally needed
+README.md / README.zh-CN.md / LICENSE.txt
 ```
 
-#### 2. 安装 SBParryBridge
+Default timing calibration (Raven, Scarlet and others) is built into the exe.
 
-1. 把发布包里的 `SBParryBridge` 文件夹整个复制到 `SB\Binaries\Win64\ue4ss\Mods\`
-2. 打开 `ue4ss\Mods\mods.txt`，加一行：
+**Play in borderless or windowed mode.** Overlays don't show over exclusive fullscreen.
+
+### Fallback: UE4SS + SBParryBridge (if a game update breaks data reading)
+
+SBParry finds the game's UE object and name tables by byte patterns. A big game update may break that; the log then says `UE globals not found`, the bar gets no notes, and about 15 s after attaching a toast says it can't read the game's data. In that case, install UE4SS and SBParryBridge: the bridge exports the same data as files and SBParry reads those instead (the log then says `Step table loaded: N rows (from SBParryBridge)`).
+
+#### 1. Install the Stellar Blade UE4SS
+
+Tested with "SB UE4SS 1.3" from Nexus (file id 2952 on the Stellar Blade Nexus page, a RE-UE4SS 4.0-rc dev build with Stellar Blade specific layouts).
+
+Go to the Nexus Mods Stellar Blade page <https://www.nexusmods.com/stellarblade>, **search for "UE4SS"** and get the Stellar Blade specific build ("SB UE4SS", which ships the Stellar Blade member-variable / vtable layouts). Install it into `SB\Binaries\Win64\` following its instructions.
+
+> The generic RE-UE4SS experimental build from GitHub does **not** work: it crashes on the first engine tick.
+
+#### 2. Install SBParryBridge
+
+1. Copy the `SBParryBridge` folder from the release into `SB\Binaries\Win64\ue4ss\Mods\`
+2. Add this line to `ue4ss\Mods\mods.txt`:
 
    ```
    SBParryBridge : 1
    ```
 
-   （`SBParryBridge` 文件夹里自带 `enabled.txt`，大多数 UE4SS 版本不改 mods.txt 也会加载；加上这一行更保险。）
+   (The folder contains an `enabled.txt`, which most UE4SS builds honour on its own; the mods.txt line is the safe option.)
 
-然后重新启动游戏。Bridge 是个很小的 Lua 脚本，负责把 SBParry 需要的数据导出到它自己的文件夹：
+Then restart the game. The bridge is a tiny Lua script that exports what SBParry needs into its own folder:
 
-| 文件 | 内容 |
+| File | Content |
 |---|---|
-| `steps.tsv` | 技能步骤表（每一招的前摇、判定、下一步，蓝光/紫光窗口，是否拼刀/连打，飞行道具速度，攻击距离，是否真正有攻击判定，冲击波环的初始半径） |
-| `live.txt` | PlayerController、世界时间缩放、可惩戒状态标记的偏移、血条、过场 QTE 控件 |
-| `projectiles.txt` | 对象池里的飞行道具实例、完美弹反/闪避标记、速度 |
-| `keys.txt` | 你当前的按键设置（自动模式用） |
+| `steps.tsv` | Skill step table (cast / hit steps, next step, blue/violet windows, clash/mash flag, projectile speed, attack reach, whether the hit is real, shockwave ring initial radius) |
+| `live.txt` | PlayerController, world time dilation, groggy flag offsets, HP bar, cutscene QTE widget |
+| `projectiles.txt` | Pooled projectile instances, perfect parry/dodge flags, speeds |
+| `keys.txt` | Your current key bindings (used by auto mode) |
 
-这四个文件的内容和 SBParry 直接读到的逐字节相同，所以两种方式用起来没有区别。
+These files are byte-for-byte what SBParry reads directly, so both ways behave the same.
 
-## 自动弹反（默认关闭）
+## Auto parry (off by default)
 
-按 Ctrl+Alt+A 打开。打开后：
+Toggle with Ctrl+Alt+A. When on, it:
 
-- 可弹反的攻击：在完美窗口正中间按格挡
-- 只能闪避的攻击：按闪避
-- 蓝光 / 紫光窗口内：前推 / 后拉 + 闪避
-- 冲击波环：跳过去
-- 拼刀、被抓挣脱（任何敌人）：连打轻攻击
-- 过场 QTE（比如战斗结尾的 QTE）：按提示的键
-- 惩戒：敌人被打崩倒地、在 2.8 m 内、并且倒地已经过了约 1.2 秒，就按重攻击（Y）惩戒。按早了游戏会当成普通重攻击。万一还是变成了重攻击，下次会多等 0.2 秒（最多 3 秒，本次运行内记住）
+- presses guard in the middle of the perfect window for parry-able hits
+- presses dodge for dodge-only hits
+- presses forward / back + dodge inside blue / violet windows
+- jumps over shockwave rings
+- mashes light attack during clashes and grab escapes (any enemy)
+- presses the prompted button in cutscene QTEs (e.g. the end-of-fight QTE)
+- performs the finisher: when the enemy has been broken and is down, is within 2.8 m, and has been down for about 1.2 s, it presses heavy attack (Y). Pressing earlier just gives a normal heavy attack. If that still happens, it waits 0.2 s longer next time (up to 3 s, remembered for the session)
 
-惩戒和 QTE 可以用 Ctrl+Alt+X 单独关掉，拼刀和挣脱的连打不受影响。
+Ctrl+Alt+X turns the finisher and QTEs off on their own; clash and grab mashing keep working.
 
-游戏窗口不在前台、或者你正按着 Ctrl / Alt 时，自动模式会暂停，免得模拟的按键和快捷键组合到一起。按下去游戏没有接受的话会再补按一次。完美闪避成功后伊芙有一小段无敌动作，预计在这期间到来的攻击先不按键（按了会被游戏缓存，结束后变成一个时机错掉的闪避，反而躲不开下一下）；如果攻击实际到得更晚、无敌结束时还没到，照常按。
+Auto mode pauses while the game isn't in the foreground or while you hold Ctrl / Alt, so simulated keys never combine with the hotkeys. If the game doesn't take a press, it retries once. Right after a perfect dodge Eve is briefly invulnerable, and hits predicted to arrive during that time get no press for now (the game would buffer it into a mistimed dodge that then misses the next hit); if a hit actually arrives later, after the invulnerability, it is pressed as usual.
 
-它用的是你在游戏里设置的键位（从游戏里读出），并跟随你最后真正使用的输入设备（自动模式自己模拟的输入不算）：
+It uses your own in-game key bindings (read from the game) and follows whichever input device you last used yourself (its own simulated input doesn't count):
 
-| 设备 | 方式 |
+| Device | Method |
 |---|---|
-| 键盘 | SendInput 模拟按键 |
-| Xbox / XInput 手柄 | 在游戏内部把模拟按键叠加到手柄状态上 |
-| DualSense（原生驱动） | 同上，作用于游戏的 libScePad 读取 |
+| Keyboard | SendInput |
+| Xbox / XInput pad | Simulated buttons are merged into the pad state inside the game |
+| DualSense (native) | Same, on the game's libScePad reads |
 
-手柄模拟不需要安装任何虚拟手柄驱动。也可以在 `sbparry.ini` 里用 `autoDevice` 固定某一种设备。
+No virtual controller driver is needed. `autoDevice` in `sbparry.ini` can pin a device.
 
-这个功能是给练习和演示用的（比如看一遍正确时机长什么样）。剑星是单机游戏，请自行决定是否使用。
+This is meant for practice and demonstration (e.g. seeing what correct timing looks like) in a single-player game.
 
-## 设置文件 sbparry.ini
+## sbparry.ini
 
-在 exe 同目录，程序里改过的设置会自动写回。一般用快捷键/托盘菜单就够了，下面是可手动改的项：
+Lives next to the exe and is rewritten when you change settings in the app.
 
-| 键 | 含义 |
+| Key | Meaning |
 |---|---|
-| `language` | 0 = 自动（跟随游戏的语言设置，读不到时跟随系统），1 = 中文，2 = English |
-| `barMode` | 判定条位置：0 = 血条下方，1 = 跟随敌人 |
-| `barVisible` | 是否显示判定条 |
-| `panelVisible` | 是否显示统计面板 |
-| `panelCorner` | 面板角落：0 左上，1 右上，2 左下，3 右下 |
-| `autoParry` | 自动弹反开关（默认 0） |
-| `autoChance` | 自动模式下是否也处理蓝光/紫光 |
-| `autoQte` | 自动模式下是否也自动惩戒、按过场 QTE（默认 1） |
+| `language` | 0 = auto (the game's language setting, or the system language if that can't be read), 1 = Chinese, 2 = English |
+| `barMode` | 0 = under the boss HP bar, 1 = follow the enemy |
+| `barVisible` | Show the bar |
+| `panelVisible` | Show the stats panel |
+| `panelCorner` | 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right |
+| `autoParry` | Auto parry (default 0) |
+| `autoChance` | Auto mode also handles blue / violet windows |
+| `autoQte` | Auto mode also does finishers and cutscene QTEs (default 1) |
 | `autoDevice` | `auto` / `keyboard` / `xinput` / `dualsense` |
-| `dataSource` | 游戏数据从哪来：`auto`（默认，直接读游戏内存，读不到再用 SBParryBridge）/ `native`（只直接读）/ `ue4ss`（只用 UE4SS + SBParryBridge）。改了要重启 SBParry |
-| `autoAimMs` | 自动按键时机微调，毫秒，正数 = 更晚 |
-| `debugLog` | 写 `timing.csv` 调试日志；同时把直接读到的数据另存为 `native_*.tsv` / `native_*.txt`（和 Bridge 的导出对比用） |
-| `uiScale` | 判定条缩放，百分比（默认 100） |
+| `dataSource` | Where game data comes from: `auto` (default: read game memory directly, fall back to SBParryBridge) / `native` (direct only) / `ue4ss` (UE4SS + SBParryBridge only). Restart SBParry after changing it |
+| `autoAimMs` | Auto press timing offset in ms, positive = later |
+| `debugLog` | Write a `timing.csv` debug log; also saves the directly read data as `native_*.tsv` / `native_*.txt` (for comparing with the bridge's export) |
+| `uiScale` | Bar scale in percent (default 100) |
 
-## 常见问题
+## FAQ
 
-**看不到判定条 / 叠加层**
-- 游戏改成**无边框窗口**或窗口模式，独占全屏看不到。
-- sbparry.exe 和游戏用同一个 Windows 用户运行（不要一个管理员、一个普通）。
-- 确认判定条没被 Ctrl+Alt+L 关掉。
-- 判定条和统计面板只在游戏窗口处于前台时显示。
-- 从托盘菜单“打开日志文件”，看有没有报错。
+**I can't see the overlay**
+- Switch the game to borderless or windowed. Exclusive fullscreen hides overlays.
+- Run sbparry.exe as the same Windows user as the game (not one elevated and one not).
+- Make sure the bar isn't hidden (Ctrl+Alt+L).
+- The bar and stats panel only show while the game window is in the foreground.
+- Use Open log file in the tray menu and check for errors.
 
-**判定条上没有音符 / 提示“读不到游戏数据”**
-- 打开日志，找 `Step table loaded` 这一行。正常情况下挂上游戏后几秒内就会出现。
-- 日志里有 `UE globals not found`，或者约 15 秒后提示“读不到游戏数据”：多半是游戏更新了，SBParry 找不到游戏的数据。按上面的“备用方案”装 UE4SS + SBParryBridge。
-- 已经装了备用方案、提示“等待 SBParryBridge 导出步骤表”的：
-  - Bridge 没加载。打开 UE4SS 控制台，看有没有 `[SBParryBridge] exported ... steps` 这行。
-  - 检查 `SBParryBridge` 是不是放在 `ue4ss\Mods\` 下面（里面应该直接是 `Scripts\main.lua`，不要多套一层文件夹），`mods.txt` 里有没有 `SBParryBridge : 1`。
-  - 确认用的是剑星专用 UE4SS。
-  - 装好后 `ue4ss\Mods\SBParryBridge\` 里应该出现 `steps.tsv`。
+**No notes / "can't read the game's data"**
+- Open the log and look for the `Step table loaded` line. It normally appears within a few seconds of attaching.
+- If the log says `UE globals not found`, or after about 15 s a toast says it can't read the game's data, a game update most likely broke data reading. Install UE4SS + SBParryBridge as described under "Fallback" above.
+- Already using the fallback and the toast says "Waiting for SBParryBridge to export the step table":
+  - The bridge isn't loaded. Open the UE4SS console and look for `[SBParryBridge] exported ... steps`.
+  - Check that the folder is `ue4ss\Mods\SBParryBridge\Scripts\main.lua` (no extra nesting) and that `mods.txt` has `SBParryBridge : 1`.
+  - Make sure you're using the Stellar Blade UE4SS build.
+  - A `steps.tsv` should appear in `ue4ss\Mods\SBParryBridge\`.
 
-**日志里说 Signatures not found（特征码没对上）**
-- 游戏更新后内部代码变了。SBParry 用特征码定位，小更新一般不受影响；大更新可能要等本工具更新。
-- 这一行指的是三个钩子的特征码，没对上就不会挂上游戏，只能等本工具更新。如果只是读游戏数据的那两个没对上（日志里是 `UE globals not found`），钩子照常工作，装上 UE4SS + SBParryBridge 就能继续用。
+**The log says the patterns didn't match**
+- The game update changed the code SBParry looks for. Byte-pattern scanning survives minor patches; bigger ones may need a tool update.
+- This message is about the three hook patterns; without them SBParry doesn't attach at all and needs a tool update. If only the two data-reading patterns fail (the log says `UE globals not found`), the hooks still work and UE4SS + SBParryBridge keep it usable.
 
-**安全吗？会不会封号？**
-- 剑星是单机游戏，没有反作弊，也没有排行榜之类的竞技玩法。
-- 不过 SBParry 会在运行时修改游戏内存（几个很小的钩子），风险请自行承担。退出时（Ctrl+Alt+Q 或托盘菜单退出）会把游戏代码还原。
+**Is it safe? Anti-cheat?**
+- Stellar Blade is a single-player game with no anti-cheat and no competitive features.
+- SBParry does patch game memory at runtime (a few tiny hooks), so use it at your own risk. Quitting via Ctrl+Alt+Q or the tray menu restores the original code.
 
-**自动弹反不按**
-- 游戏窗口必须在前台，而且没有按着 Ctrl / Alt（按着时自动模式会暂停）。
-- 检查键位：只支持单键（带 Shift/Ctrl/Alt 的组合键会被跳过）。
-- 手柄玩家：先动一下手柄让它识别到当前设备，或在 `sbparry.ini` 里设 `autoDevice`。
-- 自动弹反开启时判定条上会显示 AUTO 标记，先确认它确实开着。
+**Auto parry doesn't press anything**
+- The game window must be in the foreground, and Ctrl / Alt must not be held (auto mode pauses while they are).
+- Check your bindings: only single keys are used (bindings with Shift/Ctrl/Alt are skipped).
+- Gamepad: touch the pad once so it's detected as the current device, or set `autoDevice`.
+- The bar shows an AUTO mark when auto parry is on.
 
-**校准是什么？时机不准怎么办？**
-- 每一招从“开始出招判定”到“游戏真正结算”的时间不一样。SBParry 会在你挨过/挡过几次之后自动学到每一招的结算时间，存在 `calib.tsv`，下次启动继续用。
-- exe 内置渡鸦 (Raven)、红莲 (Scarlet) 等 Boss 的默认校准（源码里的 `data/calib_default.tsv`）。其他敌人第一次见的时候可能稍有偏差，多打几下就准了。
+**What is calibration?**
+- The time from a hit step starting to the game actually settling it differs per attack. SBParry learns it automatically after a couple of hits and stores it in `calib.tsv` for next time.
+- The exe has built-in default calibration for Raven, Scarlet and other bosses (`data/calib_default.tsv` in the source). Other enemies may be slightly off the first time and improve after a few hits.
 
-**被冲击波环打到了**
-- 那是贴地扩散的环（判定条上的薄荷绿“跳跃”音符），闪避躲不掉，要跳。自动模式会自己跳。
+**I keep getting hit by a shockwave ring**
+- It's a ring along the ground (the mint JUMP note). You can't dodge it; jump. Auto mode jumps on its own.
 
-**自动惩戒变成了重攻击**
-- 惩戒和重攻击是同一个键（Y）。敌人刚倒地时还不能惩戒，这时按下去就是普通重攻击。SBParry 会自动把等待时间加 0.2 秒，下一次就对了。
+**The auto finisher came out as a heavy attack**
+- Finisher and heavy attack share the same button (Y). Right after the enemy goes down the finisher isn't available yet, so the press becomes a normal heavy attack. SBParry adds 0.2 s to its wait and gets it right next time.
 
-**怎么知道是哪一招打中了我**
-- 看 `sbparry.log`（托盘菜单“打开日志文件”）里的 “Took damage” 那一行，会写招式名和出招后多少毫秒命中。
+**How do I find out which move hit me?**
+- Look for the "Took damage" line in `sbparry.log` (Open log file in the tray menu). It names the move and how many ms after it started the hit landed.
 
-**明明在绿区里按的，为什么还是“早了”？**
-- 游戏在攻击判定框接触你的**最后一帧**才结算，不是第一帧。那一刻窗口必须还有剩余。
-- 时间按整帧计算：0.23 秒的窗口在 60 fps 下实际只有 13 帧。卡在边缘时差 1 帧就会是“早 1 帧”。
-- 没校准过的招式预测会有几十毫秒误差，按上面说的多打几次就好。
+**It looked green but I got "early"**
+- The game settles on the **last** frame the attack touches you, not the first. The window must still have time left at that frame.
+- Everything is quantised to frames: a 0.23 s window is effectively 13 frames at 60 fps, so one frame at the edge flips the result.
+- Uncalibrated attacks can be off by tens of milliseconds until they're learned.
 
-## 从源码构建
+## Building from source
 
-需要 Visual Studio 2022（MSVC，C++17，含 x64 工具链与 MASM）。
+Visual Studio 2022 (MSVC, C++17, x64 tools with MASM).
 
 ```bat
 build.bat
 ```
 
-会编译 `src\*.cpp`、`src\hooks.asm`（ml64）和 `res\sbparry.rc`（rc）。如果 PATH 里没有 `cl`、`ml64` 或 `rc`，脚本会自动载入 VS 开发环境；万一还是找不到，就在 “x64 Native Tools Command Prompt for VS 2022” 里运行。
+Compiles `src\*.cpp`, `src\hooks.asm` (ml64) and `res\sbparry.rc` (rc). If `cl`, `ml64` or `rc` isn't on PATH, the script loads the VS developer environment itself; if that still fails, run it from the "x64 Native Tools Command Prompt for VS 2022".
 
-`package.bat 1.0.0` 会先编译，再输出 `dist\sbparry.exe`（单文件即可用），以及把 `sbparry.exe`、`SBParryBridge` 和说明文件打成 `dist\SBParry-1.0.0.zip`。默认校准 `data\calib_default.tsv` 通过 `res\sbparry.rc` 编进 exe；开发时 exe 旁边放一个同名文件会优先用文件。
+`package.bat 1.0.0` builds first, then writes `dist\sbparry.exe` (usable on its own) and zips `sbparry.exe`, `SBParryBridge` and the docs into `dist\SBParry-1.0.0.zip`. The default calibration `data\calib_default.tsv` is compiled into the exe via `res\sbparry.rc`; during development a file of the same name next to the exe takes precedence.
 
-程序图标是 `res\sbparry.ico`（原创设计：刀刃 + 四角星 + 弹反弧线），exe 和托盘都用它。图标由 `tools\icon\make_icon.py` 生成（需要 Pillow）。
+The program icon is `res\sbparry.ico` (an original design: blade, four-point star and a parry arc), used by the exe and the tray. It's generated by `tools\icon\make_icon.py` (needs Pillow).
 
-原理见 [docs/how-it-works.md](docs/how-it-works.md)。
+How it works: [docs/how-it-works.en.md](docs/how-it-works.en.md).
 
-## 免责声明
+## Disclaimer
 
-- 本项目是玩家自制的非官方工具，与 SHIFT UP、Sony Interactive Entertainment 无任何关联。《Stellar Blade》/《剑星》是其各自所有者的商标。
-- 这是一个单机游戏的练习工具。它在运行时会修改游戏内存，使用风险由你自己承担。
-- 自动弹反和一击必杀功能仅用于练习和演示。
+- Fan-made, unofficial. Not affiliated with SHIFT UP or Sony Interactive Entertainment. Stellar Blade is a trademark of its respective owners.
+- A practice tool for a single-player game. It modifies game memory at runtime; use at your own risk.
+- Auto parry and one-hit kill are for practice and demonstration.
 
-## 许可证
+## License
 
 [MIT](LICENSE)

@@ -257,8 +257,14 @@ static void RestoreFrom(const CaveHeader& h, uint64_t cave) {
     }
 }
 
+// 连接时扫到的对象数组 / 名字池特征码命中，UE 全局量还没初始化时留着重试
+static std::vector<uint64_t> g_objHits, g_poolHits;
+static bool g_ueRetry;
+static ULONGLONG g_ueTriedAt;
+
 void Detach(bool restore) {
     NativeStop();
+    g_ueRetry = false;
     if (g.h && restore && g.cave) {
         CaveHeader h{};
         if (Read(g.cave + kCaveHeader, h)) RestoreFrom(h, g.cave);
@@ -312,14 +318,15 @@ static uint64_t RipTarget(uint64_t at, int dispOff, int len) {
     return Read(at + dispOff, d) ? at + len + d : 0;
 }
 
-// 对象数组和名字池：命中里挑出结构对得上的那个，找到就启动原生导出（不需要 UE4SS）
-static void FindUeGlobals(const std::vector<uint64_t>& objHits, const std::vector<uint64_t>& poolHits) {
+// 对象数组和名字池：命中里挑出结构对得上的那个，找到就启动原生导出（不需要 UE4SS）。
+// 游戏刚启动时两者还没初始化（对象数太少 / 名字池为空），先退回 Bridge，之后每隔几秒用同一批命中重试（RetryUeGlobals）
+static bool FindUeGlobals(bool first) {
     if (g_cfg.dataSource == DataSource::Ue4ss) {
         Log(L"[SBParry] dataSource=ue4ss: reading data from SBParryBridge only\n");
-        return;
+        return false;
     }
     uint64_t objArray = 0, pool = 0;
-    for (uint64_t a : objHits) {
+    for (uint64_t a : g_objHits) {
         uint64_t x = RipTarget(a, 2, 6), chunks = 0, first = 0;
         int32_t num = 0;
         if (Read(x + 0x10, chunks) && Read(x + 0x24, num) && num > 1000 && num < 8 * 1024 * 1024 && Read(chunks, first) && first) {
@@ -328,7 +335,7 @@ static void FindUeGlobals(const std::vector<uint64_t>& objHits, const std::vecto
         }
     }
     std::set<uint64_t> tried;
-    for (uint64_t a : poolHits) {
+    for (uint64_t a : g_poolHits) {
         uint64_t x = RipTarget(a, 3, 7), blk = 0;
         if (!tried.insert(x).second) continue;
         uint8_t e[6] = {};
@@ -337,9 +344,21 @@ static void FindUeGlobals(const std::vector<uint64_t>& objHits, const std::vecto
             break;
         }
     }
-    if (objArray && pool) NativeStart(g.pid, objArray, pool);
-    else Log(L"[SBParry] UE globals not found (objects %s, names %s)%s\n", objArray ? L"OK" : L"-", pool ? L"OK" : L"-",
-             g_cfg.dataSource == DataSource::Native ? L"; dataSource=native, so no game data" : L"; reading data from SBParryBridge (UE4SS) instead");
+    if (objArray && pool) {
+        if (!first) Log(L"[SBParry] UE globals found, reading data directly from the game\n");
+        NativeStart(g.pid, objArray, pool);
+        return true;
+    }
+    if (first)
+        Log(L"[SBParry] UE globals not found yet (objects %s, names %s)%s; retrying\n", objArray ? L"OK" : L"-", pool ? L"OK" : L"-",
+            g_cfg.dataSource == DataSource::Native ? L"" : L"; reading data from SBParryBridge (UE4SS) meanwhile");
+    return false;
+}
+
+void RetryUeGlobals() {
+    if (!g.ok || !g_ueRetry || GetTickCount64() - g_ueTriedAt < 3000) return;
+    g_ueTriedAt = GetTickCount64();
+    if (FindUeGlobals(false)) g_ueRetry = false;
 }
 
 // 连接失败：还没写钩子点前分配的 cave 可以直接释放（跳板没有任何代码跳进去）
@@ -427,7 +446,9 @@ bool Attach() {
         return false;
     }
     failedPid = 0;
-    FindUeGlobals(hits[4], hits[5]);
+    g_objHits = hits[4], g_poolHits = hits[5];
+    g_ueRetry = !FindUeGlobals(true) && g_cfg.dataSource != DataSource::Ue4ss;
+    g_ueTriedAt = GetTickCount64();
     RefreshPadHooks();
     Rpm(g.log, &g.readIdx, 4);
     Log(TR("[SBParry] 已连接游戏 pid=%lu（判定 +%llX 按下 +%llX 步骤 +%llX，手柄 XInput %s / DualSense %s）\n",

@@ -193,11 +193,14 @@ static void Tick() {
     static ULONGLONG lastTry = 0, lastSteps = 0, lastPad = 0;
     ULONGLONG now = GetTickCount64();
     if (g.ok) {
-        if (WaitForSingleObject(g.h, 0) == WAIT_OBJECT_0) {
+        // 游戏退出时往往先读不到内存、进程过一会儿才结束：读失败后稍等一下再判断是退出还是要重连
+        bool exited = WaitForSingleObject(g.h, 0) == WAIT_OBJECT_0, failed = !exited && !Poll();
+        if (failed && WaitForSingleObject(g.h, 1000) == WAIT_OBJECT_0) exited = true;
+        if (exited) {
             Log(TR("[SBParry] 游戏已退出\n", "[SBParry] Game exited\n"));
             Detach(false);
             ResetTracker();
-        } else if (!Poll()) {
+        } else if (failed) {
             Log(TR("[SBParry] 读取失败，重新连接\n", "[SBParry] Read failed, reconnecting\n"));
             SetOneHitKill(false); // 游戏还在：先把伤害倍率写回去、还原钩子，再断开
             Detach(true);
@@ -207,6 +210,7 @@ static void Tick() {
         lastTry = now;
         Attach();
     }
+    RetryUeGlobals();
     if (g.ok && !StepsLoaded() && now - lastSteps > 3000) { lastSteps = now; LoadSteps(); }
     if (g.ok && now - lastPad > 1000) { lastPad = now; RefreshPadHooks(); }
     LiveTick();
@@ -233,7 +237,8 @@ static void Tick() {
     // 切到别的程序时判定条和面板不要盖在它上面（窗口化 / 无边框时）
     bool fg = client && GameForeground();
     int x = 0, y = 0;
-    bool bar = fg && g_cfg.barVisible && g_live.enemy && StepsLoaded() && PlaceBar(r, x, y);
+    // 暂停菜单里镜头换了：跟随模式算出的位置是错的，固定模式会盖在菜单上，都先藏起来
+    bool bar = fg && g_cfg.barVisible && g_live.enemy && StepsLoaded() && !CameraAway() && PlaceBar(r, x, y);
     OverlayDrawBar(f, x, y, bar);
     if (!client) {
         // 没有游戏窗口：面板和提示放在主显示器工作区

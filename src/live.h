@@ -14,6 +14,7 @@ bool GameClient(RECT& r);                         // 游戏客户区（屏幕坐
 bool GameForeground();                            // 游戏窗口在前台
 bool ActorLocation(uint64_t actor, float out[3]); // 世界坐标（厘米）
 bool CameraPov(float loc[3], float rot[3], float& fov);
+bool CameraAway();                                // 镜头远离玩家（暂停菜单 / 过场换了镜头）
 bool Project(const float w[3], int& sx, int& sy); // 世界 -> 屏幕
 uint64_t TargetEnemy();                           // 锁定的敌人，没有就用最近锁定过的
 float TargetDistance();                           // 伊芙到 TargetEnemy 的水平距离（米），未知返回 -1

@@ -100,11 +100,14 @@ int CutsceneQteAction() {
     return (int)(action ? action : uiaction);
 }
 
+// 只认 UE 的游戏窗口：装了 UE4SS 时同一进程还有控制台和调试工具窗口，抓错了判定条就按那个窗口的大小算，位置全偏
 static BOOL CALLBACK EnumGameWindow(HWND h, LPARAM lp) {
     DWORD pid = 0;
     GetWindowThreadProcessId(h, &pid);
     RECT r;
-    if (pid == g.pid && IsWindowVisible(h) && !GetWindow(h, GW_OWNER) && GetClientRect(h, &r) && r.right * r.bottom > 200000) {
+    wchar_t cls[32] = L"";
+    if (pid == g.pid && IsWindowVisible(h) && !GetWindow(h, GW_OWNER) && GetClassNameW(h, cls, 32) && !wcscmp(cls, L"UnrealWindow") &&
+        GetClientRect(h, &r) && r.right * r.bottom > 200000) {
         *(HWND*)lp = h;
         return FALSE;
     }
@@ -168,6 +171,15 @@ bool CameraPov(float loc[3], float rot[3], float& fov) {
     memcpy(rot, b + 12, 12);
     memcpy(&fov, b + 24, 4);
     return fov > 5 && fov < 170;
+}
+
+// 暂停菜单不会让游戏进入 UE 的暂停状态，而是把 PlayerCameraManager 换成菜单背景的镜头（几百米外、FOV 30），
+// 这时拿它投影敌人全是错的。战斗中镜头离玩家只有几米，超过 30 米就当成菜单 / 过场。读不到时不算
+bool CameraAway() {
+    float c[3], rot[3], fov, p[3];
+    if (!CameraPov(c, rot, fov) || !ActorLocation(g_live.player, p)) return false;
+    double dx = c[0] - p[0], dy = c[1] - p[1], dz = c[2] - p[2];
+    return dx * dx + dy * dy + dz * dz > 3000.0 * 3000.0;
 }
 
 // UE：X 前 Y 右 Z 上，FOV 为水平视角

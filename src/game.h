@@ -55,6 +55,7 @@ extern Game g;
 
 bool Attach();
 void Detach(bool restore);
+void RetryUeGlobals(); // 连接时 UE 全局量还没初始化：定期重试，找到后切到原生导出
 void RefreshPadHooks(); // 延迟加载的导入可能在之后才被解析、覆盖掉我们的槽位，定期检查补挂
 
 bool Rpm(uint64_t a, void* out, size_t n);
